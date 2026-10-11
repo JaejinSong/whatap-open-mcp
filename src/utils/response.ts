@@ -1,6 +1,8 @@
 // src/utils/response.ts
 // Central response utilities for errors, next-steps, and no-data cases.
 
+import { TimeArgumentError } from "./time.js";
+
 // ---------- Types ----------
 
 type McpTextContent = { type: "text"; text: string };
@@ -96,6 +98,15 @@ export function classifyAndBuildError(
       message: `Request timed out for ${context.toolName}.`,
       hint: 'Try a shorter time range (e.g., "5m" instead of "1d").',
       retryable: true,
+    });
+  }
+
+  // Bad timeRange / stime / etime — rejected locally, nothing was sent
+  if (err instanceof TimeArgumentError) {
+    return buildErrorResponse({
+      message: `${context.toolName}: ${msg}`,
+      hint: "Fix the time arguments and retry. The request was not sent to WhaTap.",
+      retryable: false,
     });
   }
 

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`stime` / `etime` on every time-windowed tool** (`whatap_query_data`,
+  `whatap_create_promql`, `whatap_apm_anomaly`, `whatap_service_topology`).
+  `timeRange` always ended at *now*, so a past incident window — say
+  2026-05-14 09:00–10:00 KST — could only be reached by querying everything from
+  then until today, and anything older than the server's one-month cap could not
+  be reached at all. The window now resolves as:
+
+  | given | window |
+  | --- | --- |
+  | neither | `[now - timeRange, now]` (unchanged) |
+  | `stime` | `[stime, stime + timeRange]` |
+  | `etime` | `[etime - timeRange, etime]` |
+  | both | `[stime, etime]`, `timeRange` ignored |
+
+  Values are epoch milliseconds (or 10-digit seconds) as strings, or ISO 8601
+  with an explicit offset (`2026-05-14T09:00:00+09:00`, `…Z`). An ISO value
+  without an offset is rejected rather than read in the MCP process's local
+  zone, which would silently shift the window by hours.
+
+### Fixed
+
+- **Bad `timeRange` / `stime` / `etime` arguments were reported as a wrong
+  project code** ("Verify project code N is correct", "call
+  `whatap_list_projects`"). They now say the time arguments need fixing and that
+  no request was sent.
+
 ## [1.5.3] - 2026-09-16
 
 ### Fixed

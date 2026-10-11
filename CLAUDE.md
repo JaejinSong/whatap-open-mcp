@@ -50,7 +50,7 @@ src/
 │   ├── install.ts (1)    # install_agent (fetch access + generate install commands for 29 platforms)
 │   └── promql.ts (1)     # create_promql (validate + save reusable PromQL queries)
 └── utils/
-    ├── time.ts           # parseTimeRange("5m","1h","last 7 days") → {stime,etime}
+    ├── time.ts           # parseTimeRange("5m","1h","last 7 days") → {stime,etime}; resolveTimeWindow() adds absolute stime/etime
     ├── format.ts         # MXQL results → Markdown tables, unit annotations, semantic headers, summary stats, field guide
     ├── response.ts       # classifyAndBuildError(), appendNextSteps(), buildNoDataResponse() — unified response system
     ├── descriptions.ts   # Shared parameter descriptions, MXQL param registry (17), English overlay (120 translations)
