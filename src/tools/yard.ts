@@ -4,7 +4,9 @@
 import { z } from "../mcp/schema.js";
 import type { McpServer } from "../mcp/server.js";
 import type { WhatapApiClient } from "../api/client.js";
-import { formatMxqlResponse } from "../utils/format.js";
+import { formatMxqlResponse, truncatedCoverage, fmtTime, isoTime } from "../utils/format.js";
+import { checkOutputFile, writeOutput, type OutputTarget } from "../utils/output-file.js";
+import { LocalArgumentError } from "../utils/errors.js";
 import { formatPromqlResponse, formatOpenMetricsList } from "../utils/format-promql.js";
 import { resolveTimeWindow, requestedWindow } from "../utils/time.js";
 import { checkLimit } from "../api/limits.js";
@@ -13,6 +15,7 @@ import {
   PARAM_TIME_RANGE_OPTIONAL,
   PARAM_STIME,
   PARAM_ETIME,
+  PARAM_OUTPUT_FILE,
   PARAM_MXQL_PATH,
   MXQL_PARAM_REGISTRY,
   HEADER_UNIT_SUFFIX,
@@ -1045,10 +1048,14 @@ export function registerYardTools(
         .number()
         .default(100)
         .describe("Maximum rows to return (default: 100, 1 to 100,000)."),
+      outputFile: z.string().optional().describe(PARAM_OUTPUT_FILE),
     },
-    async ({ projectCode, path, query, savedQuery, timeRange, stime: stimeArg, etime: etimeArg, params, limit }) => {
+    async ({ projectCode, path, query, savedQuery, timeRange, stime: stimeArg, etime: etimeArg, params, limit, outputFile }) => {
       try {
         checkLimit(limit);
+        if (outputFile !== undefined && !path) {
+          throw new LocalArgumentError("outputFile works with MXQL (path) only, not PromQL.");
+        }
       } catch (err) {
         return classifyAndBuildError(err, {
           toolName: "whatap_query_data",
@@ -1182,6 +1189,10 @@ export function registerYardTools(
           stime: stimeArg,
           etime: etimeArg,
         });
+        const target: OutputTarget | undefined =
+          outputFile !== undefined
+            ? checkOutputFile(outputFile, Boolean(stimeArg && stimeArg.trim()))
+            : undefined;
 
         // Local catalog priority: if raw MXQL exists in catalog, use text endpoint
         const catalogInfo = describeMql(path);
@@ -1314,6 +1325,22 @@ export function registerYardTools(
           }
         }
 
+        if (target) {
+          const summary = writeOutput(target, dataRows as Record<string, unknown>[], stime);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: formatOutputSummary(path, target, summary, dataRows as Record<string, unknown>[], {
+                  stime,
+                  etime,
+                  limit,
+                }),
+              },
+            ],
+          };
+        }
+
         // Classify result type from catalog metadata (reuse catalogInfo from above)
         const querySem = classifyResultType(path, {
           selectFields: catalogInfo?.selectFields,
@@ -1363,4 +1390,59 @@ export function registerYardTools(
       }
     }
   );
+}
+
+/** The response for a query_data call that saved its rows to outputFile. */
+function formatOutputSummary(
+  path: string,
+  target: OutputTarget,
+  s: ReturnType<typeof writeOutput>,
+  rows: Record<string, unknown>[],
+  q: { stime: number; etime: number; limit: number }
+): string {
+  const n = (v: number) => v.toLocaleString("en-US");
+  const lines = [
+    `## ${path} → ${target.path}`,
+    "",
+    `**Period**: ${fmtTime(q.stime)} → ${fmtTime(q.etime)}`,
+    target.continuing
+      ? `**Saved**: ${n(s.written)} rows appended; ${n(s.replaced)} rows at or after stime replaced. File now holds ${n(s.totalRows)} rows.`
+      : `**Saved**: ${n(s.written)} rows to a new ${target.format.toUpperCase()} file.`,
+  ];
+  if (s.first !== undefined && s.last !== undefined) {
+    lines.push(
+      `**File covers**: ${fmtTime(s.first)} → ${fmtTime(s.last)}, ${n(s.distinctTimes)} distinct times`
+    );
+  }
+  lines.push(`**Columns**: ${s.columns.join(", ")}`, "");
+
+  const truncated = rows.length >= q.limit;
+  const coverage = truncated ? truncatedCoverage(rows, q.etime) : undefined;
+  if (coverage && coverage.first === coverage.last) {
+    lines.push(
+      `> **Truncated at limit ${n(q.limit)}.** All rows of this call are at ${fmtTime(coverage.last)}, ` +
+        `and that time alone has more rows than the limit, so continuing from it would return ` +
+        `the same rows. Call again with the same outputFile, stime="${isoTime(coverage.last)}" ` +
+        `and a limit well above ${n(q.limit)}.`
+    );
+  } else if (coverage) {
+    lines.push(
+      `> **Truncated at limit ${n(q.limit)}.** This call's rows end at ${fmtTime(coverage.last)}; ` +
+        `rows at that time may be partial and nothing after it was returned. To continue, call ` +
+        `again with the same outputFile, stime="${isoTime(coverage.last)}" and the same etime. ` +
+        `The file replaces its rows from that time, so do not de-duplicate. Keep limit large ` +
+        `(up to 100,000) to keep the number of requests down.`
+    );
+  } else if (truncated && s.first === undefined) {
+    lines.push(
+      `> Result may be truncated at limit ${n(q.limit)}. Rows have no time column, so this file ` +
+        `cannot be continued; raise limit or narrow the query.`
+    );
+  } else {
+    lines.push(
+      `> Complete: the server returned every row up to etime (${fmtTime(q.etime)}, not included). ` +
+        `Read the file with your own tools; its rows are not in this response.`
+    );
+  }
+  return lines.join("\n");
 }

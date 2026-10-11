@@ -458,7 +458,7 @@ function formatValue(v: unknown, field?: string): string {
  * Time span of the returned rows, when they end before the requested etime.
  * Undefined when rows carry no numeric `time` or already reach etime.
  */
-function truncatedCoverage(
+export function truncatedCoverage(
   rows: Record<string, unknown>[],
   etime: number
 ): { first: number; last: number } | undefined {
@@ -474,11 +474,11 @@ function truncatedCoverage(
   return { first, last };
 }
 
-function isoTime(ms: number): string {
+export function isoTime(ms: number): string {
   return new Date(ms).toISOString().replace(".000Z", "Z");
 }
 
-function fmtTime(ms: number): string {
+export function fmtTime(ms: number): string {
   return new Date(ms).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 }
 

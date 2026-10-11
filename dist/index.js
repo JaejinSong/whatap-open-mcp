@@ -16320,6 +16320,7 @@ var ENGLISH_DESCRIPTIONS = {
 function translateDescription(path, original) {
   return ENGLISH_DESCRIPTIONS[path] ?? ENGLISH_DESCRIPTIONS[path.replace(/^mxql\//, "")] ?? original;
 }
+var PARAM_OUTPUT_FILE = "Absolute path of a .csv or .jsonl file to save the rows to, instead of returning them as a table (MXQL only). Use it to collect rows rather than read them: the response carries only a summary. If the result is truncated, call again with the same outputFile and the stime the response gives; the file is continued, and its rows at or after that stime are replaced, so do not de-duplicate. An existing file is never started over: a call without stime is rejected.";
 
 // src/utils/errors.ts
 var LocalArgumentError = class extends Error {
@@ -16682,6 +16683,162 @@ ${text}`;
       }
     }
   );
+}
+
+// src/utils/output-file.ts
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "fs";
+import { dirname, extname, isAbsolute } from "path";
+var TIME = "time";
+var TIME_UTC = "time_utc";
+function checkOutputFile(file, hasStime) {
+  if (!isAbsolute(file)) {
+    throw new LocalArgumentError(
+      `outputFile must be an absolute path, got "${file}".`
+    );
+  }
+  const ext = extname(file).toLowerCase();
+  if (ext !== ".csv" && ext !== ".jsonl") {
+    throw new LocalArgumentError(
+      `outputFile must end in .csv or .jsonl, got "${file}".`
+    );
+  }
+  const dir = dirname(file);
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+    throw new LocalArgumentError(`outputFile directory does not exist: ${dir}`);
+  }
+  const format = ext === ".csv" ? "csv" : "jsonl";
+  if (!existsSync(file)) return { path: file, format, continuing: false };
+  if (!hasStime) {
+    throw new LocalArgumentError(
+      `outputFile ${file} already exists. To continue it, pass the stime the previous response gave (same etime). To start a new collection, choose a new path.`
+    );
+  }
+  if (!looksWritten(file, format)) {
+    throw new LocalArgumentError(
+      `outputFile ${file} exists but was not written by whatap_query_data (no "${TIME}" column), so it cannot be continued. Choose a new path.`
+    );
+  }
+  return { path: file, format, continuing: true };
+}
+function looksWritten(file, format) {
+  const firstLine = readFileSync(file, "utf8").split("\n", 1)[0];
+  if (format === "csv") return firstLine.split(",")[0] === TIME;
+  try {
+    return typeof JSON.parse(firstLine)?.[TIME] === "number";
+  } catch {
+    return false;
+  }
+}
+function writeOutput(target, rows, stime) {
+  const timed = rows.some((r) => typeof r[TIME] === "number");
+  if (target.continuing && !timed) {
+    throw new LocalArgumentError(
+      `This result has no "${TIME}" column, so it cannot continue ${target.path}. Choose a new path.`
+    );
+  }
+  const out = target.format === "csv" ? writeCsv(target, rows, stime, timed) : writeJsonl(target, rows, stime);
+  return { ...out, written: rows.length };
+}
+function writeCsv(target, rows, stime, timed) {
+  let columns = [];
+  let kept = [];
+  let replaced = 0;
+  const times = [];
+  if (target.continuing) {
+    const lines = readFileSync(target.path, "utf8").split("\n").filter((l) => l !== "");
+    columns = lines[0].split(",");
+    for (const line of lines.slice(1)) {
+      const t = Number(line.slice(0, line.indexOf(",")));
+      if (t >= stime) {
+        replaced++;
+      } else {
+        kept.push(line);
+        times.push(t);
+      }
+    }
+  } else if (timed) {
+    columns = [TIME, TIME_UTC];
+  }
+  const known = new Set(columns);
+  const added = [];
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (!known.has(key)) {
+        known.add(key);
+        added.push(key);
+      }
+    }
+  }
+  if (added.length > 0) {
+    const pad = ",".repeat(added.length);
+    kept = kept.map((l) => l + pad);
+    columns = columns.concat(added);
+  }
+  const body = rows.map((row) => {
+    const t = row[TIME];
+    if (typeof t === "number") times.push(t);
+    return columns.map(
+      (c) => c === TIME_UTC && timed ? typeof t === "number" ? isoTime2(t) : "" : csvCell(row[c])
+    ).join(",");
+  });
+  atomicWrite(target.path, [columns.join(","), ...kept, ...body].join("\n") + "\n");
+  return { replaced, totalRows: kept.length + body.length, columns, ...timeStats(times) };
+}
+function writeJsonl(target, rows, stime) {
+  const kept = [];
+  let replaced = 0;
+  const times = [];
+  const columns = /* @__PURE__ */ new Set();
+  if (target.continuing) {
+    for (const line of readFileSync(target.path, "utf8").split("\n")) {
+      if (line === "") continue;
+      const obj = JSON.parse(line);
+      const t = obj[TIME];
+      if (typeof t === "number" && t >= stime) {
+        replaced++;
+        continue;
+      }
+      kept.push(line);
+      if (typeof t === "number") times.push(t);
+      for (const k of Object.keys(obj)) columns.add(k);
+    }
+  }
+  const body = rows.map((row) => {
+    const t = row[TIME];
+    if (typeof t === "number") times.push(t);
+    for (const k of Object.keys(row)) columns.add(k);
+    return JSON.stringify(row);
+  });
+  atomicWrite(target.path, [...kept, ...body].join("\n") + "\n");
+  return {
+    replaced,
+    totalRows: kept.length + body.length,
+    columns: [...columns],
+    ...timeStats(times)
+  };
+}
+function csvCell(v) {
+  if (v === void 0 || v === null) return "";
+  const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function timeStats(times) {
+  if (times.length === 0) return { distinctTimes: 0 };
+  let first = Infinity;
+  let last = -Infinity;
+  for (const t of times) {
+    if (t < first) first = t;
+    if (t > last) last = t;
+  }
+  return { distinctTimes: new Set(times).size, first, last };
+}
+function atomicWrite(file, content) {
+  const tmp = `${file}.tmp-${process.pid}`;
+  writeFileSync(tmp, content);
+  renameSync(tmp, file);
+}
+function isoTime2(ms) {
+  return new Date(ms).toISOString().replace(".000Z", "Z");
 }
 
 // src/utils/format-promql.ts
@@ -47936,11 +48093,15 @@ Verify the metric exists: \`whatap_data_availability(projectCode=${projectCode})
       params: z.record(z.string()).optional().describe(
         'Query parameters for MXQL $-prefixed variables. Example: {"oid": "12345", "okind": "myApp"}'
       ),
-      limit: z.number().default(100).describe("Maximum rows to return (default: 100, 1 to 100,000).")
+      limit: z.number().default(100).describe("Maximum rows to return (default: 100, 1 to 100,000)."),
+      outputFile: z.string().optional().describe(PARAM_OUTPUT_FILE)
     },
-    async ({ projectCode, path, query, savedQuery, timeRange, stime: stimeArg, etime: etimeArg, params, limit }) => {
+    async ({ projectCode, path, query, savedQuery, timeRange, stime: stimeArg, etime: etimeArg, params, limit, outputFile }) => {
       try {
         checkLimit(limit);
+        if (outputFile !== void 0 && !path) {
+          throw new LocalArgumentError("outputFile works with MXQL (path) only, not PromQL.");
+        }
       } catch (err) {
         return classifyAndBuildError(err, {
           toolName: "whatap_query_data",
@@ -48059,6 +48220,7 @@ Create new queries with \`whatap_create_promql\`.`
           stime: stimeArg,
           etime: etimeArg
         });
+        const target = outputFile !== void 0 ? checkOutputFile(outputFile, Boolean(stimeArg && stimeArg.trim())) : void 0;
         const catalogInfo = describeMql(path);
         const rawMxql = catalogInfo?.raw;
         if (rawMxql) {
@@ -48150,6 +48312,21 @@ Create new queries with \`whatap_create_promql\`.`
             }
           }
         }
+        if (target) {
+          const summary = writeOutput(target, dataRows, stime);
+          return {
+            content: [
+              {
+                type: "text",
+                text: formatOutputSummary(path, target, summary, dataRows, {
+                  stime,
+                  etime,
+                  limit
+                })
+              }
+            ]
+          };
+        }
         const querySem = classifyResultType(path, {
           selectFields: catalogInfo?.selectFields,
           rawMxql: catalogInfo?.raw
@@ -48193,6 +48370,41 @@ Create new queries with \`whatap_create_promql\`.`
       }
     }
   );
+}
+function formatOutputSummary(path, target, s, rows, q) {
+  const n = (v) => v.toLocaleString("en-US");
+  const lines = [
+    `## ${path} \u2192 ${target.path}`,
+    "",
+    `**Period**: ${fmtTime(q.stime)} \u2192 ${fmtTime(q.etime)}`,
+    target.continuing ? `**Saved**: ${n(s.written)} rows appended; ${n(s.replaced)} rows at or after stime replaced. File now holds ${n(s.totalRows)} rows.` : `**Saved**: ${n(s.written)} rows to a new ${target.format.toUpperCase()} file.`
+  ];
+  if (s.first !== void 0 && s.last !== void 0) {
+    lines.push(
+      `**File covers**: ${fmtTime(s.first)} \u2192 ${fmtTime(s.last)}, ${n(s.distinctTimes)} distinct times`
+    );
+  }
+  lines.push(`**Columns**: ${s.columns.join(", ")}`, "");
+  const truncated = rows.length >= q.limit;
+  const coverage = truncated ? truncatedCoverage(rows, q.etime) : void 0;
+  if (coverage && coverage.first === coverage.last) {
+    lines.push(
+      `> **Truncated at limit ${n(q.limit)}.** All rows of this call are at ${fmtTime(coverage.last)}, and that time alone has more rows than the limit, so continuing from it would return the same rows. Call again with the same outputFile, stime="${isoTime(coverage.last)}" and a limit well above ${n(q.limit)}.`
+    );
+  } else if (coverage) {
+    lines.push(
+      `> **Truncated at limit ${n(q.limit)}.** This call's rows end at ${fmtTime(coverage.last)}; rows at that time may be partial and nothing after it was returned. To continue, call again with the same outputFile, stime="${isoTime(coverage.last)}" and the same etime. The file replaces its rows from that time, so do not de-duplicate. Keep limit large (up to 100,000) to keep the number of requests down.`
+    );
+  } else if (truncated && s.first === void 0) {
+    lines.push(
+      `> Result may be truncated at limit ${n(q.limit)}. Rows have no time column, so this file cannot be continued; raise limit or narrow the query.`
+    );
+  } else {
+    lines.push(
+      `> Complete: the server returned every row up to etime (${fmtTime(q.etime)}, not included). Read the file with your own tools; its rows are not in this response.`
+    );
+  }
+  return lines.join("\n");
 }
 
 // src/tools/mesh.ts

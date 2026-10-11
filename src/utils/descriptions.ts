@@ -263,3 +263,11 @@ export function translateDescription(
     ?? ENGLISH_DESCRIPTIONS[path.replace(/^mxql\//, "")]
     ?? original;
 }
+
+export const PARAM_OUTPUT_FILE =
+  "Absolute path of a .csv or .jsonl file to save the rows to, instead of returning them " +
+  "as a table (MXQL only). Use it to collect rows rather than read them: the response " +
+  "carries only a summary. If the result is truncated, call again with the same " +
+  "outputFile and the stime the response gives; the file is continued, and its rows at " +
+  "or after that stime are replaced, so do not de-duplicate. An existing file is never " +
+  "started over: a call without stime is rejected.";
