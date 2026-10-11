@@ -34,6 +34,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   project code** ("Verify project code N is correct", "call
   `whatap_list_projects`"). They now say the time arguments need fixing and that
   no request was sent.
+- **Requests over the server's limits are rejected before they are sent.**
+  Measured on 2026-10-11, `/open-mcp/api/flush/mxql/*` answers HTTP 400 when
+  `etime - stime` is 32 days or more (32 days - 1 ms passes; a fixed length, not
+  a calendar month) and when `limit` exceeds 100,000. Those 400s used to come
+  back with "Verify project code N is correct". Every time-windowed tool now
+  checks the window locally and suggests a split that fits; `whatap_query_data`
+  accepts `limit` from 1 to 100,000. A window whose `stime` is not before `etime`
+  is rejected too: the server answers it with an empty result, which reads as
+  "no data".
+- **Server 400s that still get through name the server's reason.** The two
+  limit messages above get their own hint, and any other 400 points at the
+  server's message instead of the project code.
+- **Error classification no longer keys on a project code.** A `401`, `403` or
+  `429` inside the message (`for project 403: …`) was read as an auth or rate
+  limit failure; only the HTTP status is matched now.
 
 ## [1.5.3] - 2026-09-16
 

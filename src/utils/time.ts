@@ -1,15 +1,13 @@
+import { LocalArgumentError } from "./errors.js";
+import { MAX_WINDOW_MS } from "../api/limits.js";
+
 export interface TimeRange {
   stime: number;
   etime: number;
 }
 
 /** A timeRange / stime / etime argument the caller can fix; no request was sent. */
-export class TimeArgumentError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "TimeArgumentError";
-  }
-}
+export class TimeArgumentError extends LocalArgumentError {}
 
 const UNIT_MS: Record<string, number> = {
   s: 1_000,
@@ -67,6 +65,26 @@ export function parseDuration(range: string): number {
 export function parseTimeRange(range: string): TimeRange {
   const etime = Date.now();
   return { stime: etime - parseDuration(range), etime };
+}
+
+function fmtSpan(ms: number): string {
+  const d = Math.floor(ms / 86_400_000);
+  const h = Math.floor((ms % 86_400_000) / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return [d && `${d}d`, h && `${h}h`, m && `${m}m`].filter(Boolean).join(" ") || `${ms}ms`;
+}
+
+/** Rejects a window the WhaTap API would refuse; see MAX_WINDOW_MS. */
+function checkWindowSpan(stime: number, etime: number): void {
+  const span = etime - stime;
+  if (span < MAX_WINDOW_MS) return;
+  const firstEnd = stime + MAX_WINDOW_MS - 86_400_000;
+  throw new TimeArgumentError(
+    `Time window is ${fmtSpan(span)}; the WhaTap API rejects a window of 32 days or more ` +
+      `("The maximum search period is one month"). ` +
+      `Split it with stime/etime into parts under 32 days, ` +
+      `e.g. stime="${iso(stime)}", etime="${iso(firstEnd)}", then continue from there.`
+  );
 }
 
 // ISO 8601 with a mandatory offset: "2026-05-14T09:00:00+09:00", "2026-05-14 09:00Z"
@@ -140,6 +158,7 @@ export function resolveTimeWindow(opts: {
 
   if (!hasS && !hasE) {
     const { stime, etime } = parseTimeRange(opts.timeRange);
+    checkWindowSpan(stime, etime);
     return { stime, etime, label: opts.timeRange, absolute: false };
   }
 
@@ -162,6 +181,7 @@ export function resolveTimeWindow(opts: {
     );
   }
 
+  checkWindowSpan(stime, etime);
   return { stime, etime, label: `${iso(stime)} → ${iso(etime)}`, absolute: true };
 }
 

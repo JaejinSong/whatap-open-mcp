@@ -7,6 +7,7 @@ import type { WhatapApiClient } from "../api/client.js";
 import { formatMxqlResponse } from "../utils/format.js";
 import { formatPromqlResponse, formatOpenMetricsList } from "../utils/format-promql.js";
 import { resolveTimeWindow, requestedWindow } from "../utils/time.js";
+import { checkLimit } from "../api/limits.js";
 import {
   PARAM_PROJECT_CODE,
   PARAM_TIME_RANGE_OPTIONAL,
@@ -1043,9 +1044,19 @@ export function registerYardTools(
       limit: z
         .number()
         .default(100)
-        .describe("Maximum rows to return (default: 100)."),
+        .describe("Maximum rows to return (default: 100, 1 to 100,000)."),
     },
     async ({ projectCode, path, query, savedQuery, timeRange, stime: stimeArg, etime: etimeArg, params, limit }) => {
+      try {
+        checkLimit(limit);
+      } catch (err) {
+        return classifyAndBuildError(err, {
+          toolName: "whatap_query_data",
+          projectCode,
+          timeRange: requestedWindow(timeRange, stimeArg, etimeArg),
+        });
+      }
+
       // ── Resolve saved query ──
       if (savedQuery) {
         const saved = getPromqlQueryStore().get(projectCode, savedQuery);

@@ -14,7 +14,7 @@ export const PARAM_TIME_RANGE =
 export const PARAM_TIME_RANGE_OPTIONAL =
   'Time range (default: "5m"). ' +
   'Examples: "5m", "1h", "6h", "1d", "last 30 minutes". ' +
-  "Ends now unless stime or etime is given.";
+  "Ends now unless stime or etime is given. The window must be under 32 days.";
 
 const TIME_POINT_FORMAT =
   'Epoch milliseconds as a string (e.g. "1778716800000") or ISO 8601 with an ' +
