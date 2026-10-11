@@ -323,7 +323,7 @@ and show me which agents are active.
 
 ## 6. Available Tools
 
-The MCP server provides 10 tools:
+The MCP server provides 11 tools:
 
 ### Core Tools
 
@@ -347,6 +347,7 @@ The MCP server provides 10 tools:
 |------|-------------|
 | `whatap_apm_anomaly` | Multi-query APM anomaly detection (TPS, latency, errors, active TX) |
 | `whatap_service_topology` | Service connectivity map with bottleneck detection (requires NPM) |
+| `whatap_error_summary` | Error classes, messages, services, outbound HTTP hosts/URLs as text, plus Java stack traces |
 
 ### PromQL / OpenMetrics
 

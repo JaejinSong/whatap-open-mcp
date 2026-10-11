@@ -362,6 +362,7 @@ MCP 서버는 총 8개의 도구를 AI 어시스턴트에 제공합니다. 사�
 |------|------|
 | `whatap_apm_anomaly` | APM 이상 탐지 — TPS, 응답시간, 에러, Active TX 4개 쿼리를 동시 실행하여 통계 분석 |
 | `whatap_service_topology` | 서비스 간 연결 관계 및 네트워크 병목 탐지 (NPM 에이전트 필요) |
+| `whatap_error_summary` | 에러 클래스·메시지·서비스와 외부 호출 host·URL 을 텍스트로, Java 스택까지 조회 |
 
 ### 도구별 사용 흐름
 

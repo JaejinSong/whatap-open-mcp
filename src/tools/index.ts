@@ -5,6 +5,7 @@ import { registerYardTools } from "./yard.js";
 import { registerMeshTools } from "./mesh.js";
 import { registerInstallTools } from "./install.js";
 import { registerPromqlTools } from "./promql.js";
+import { registerErrorTools } from "./errors.js";
 
 export function registerAllTools(
   server: McpServer,
@@ -15,4 +16,5 @@ export function registerAllTools(
   registerMeshTools(server, client);
   registerInstallTools(server, client);
   registerPromqlTools(server, client);
+  registerErrorTools(server, client);
 }

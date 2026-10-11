@@ -69,3 +69,26 @@ export function decodeCategoryArg(category: string): string {
     .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
     .replace(/&amp;/g, "&");
 }
+
+/**
+ * Fill yard template markers the way yard's ParamText does when it serves a
+ * stat query (`new ParamText(mql, "<%", "%>").getText(param)`).
+ * Every marker in the text must have a value; an empty string removes it.
+ * Throws on a marker with no value, so a half-filled template never reaches
+ * the server (it would come back as an empty or error row, not a failure).
+ */
+export function fillMarkers(raw: string, values: Record<string, string>): string {
+  const missing = new Set<string>();
+  const out = raw.replace(MARKER_RE, (_m, name: string) => {
+    const key = name.trim();
+    if (!(key in values)) {
+      missing.add(key);
+      return "";
+    }
+    return values[key];
+  });
+  if (missing.size > 0) {
+    throw new Error(`Template markers left without a value: ${[...missing].join(", ")}`);
+  }
+  return out;
+}
