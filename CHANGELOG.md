@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Error classification no longer keys on a project code.** A `401`, `403` or
   `429` inside the message (`for project 403: …`) was read as an auth or rate
   limit failure; only the HTTP status is matched now.
+- **A result cut at `limit` now says which part of the window it covers.**
+  The server fills rows from `stime` and stops at `limit` (measured
+  2026-10-11), so a truncated `whatap_query_data` result is the start of the
+  window, not a sample of it — yet only "Result may be truncated" was shown
+  under a Period naming the whole window. When the rows carry `time` and end
+  before `etime`, the notice now gives the span actually returned, warns that
+  rows at the latest time may be partial, and gives the `stime` to continue
+  from. When every returned row shares one time, that time alone exceeds the
+  limit, so it asks for a larger limit instead of a `stime` that would return
+  the same rows. Ranking results, and results without a `time` column, keep
+  the old notice.
 
 ## [1.5.3] - 2026-09-16
 
