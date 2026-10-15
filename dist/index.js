@@ -16082,9 +16082,9 @@ function isoTime(ms) {
 function fmtTime(ms) {
   return new Date(ms).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 }
-function fmtNum(n) {
-  if (Number.isInteger(n)) return String(n);
-  return n.toFixed(1);
+function fmtNum(n2) {
+  if (Number.isInteger(n2)) return String(n2);
+  return n2.toFixed(1);
 }
 function computeSummaryStats(rows, headerTypes, rowCounts) {
   if (rows.length < 3) return null;
@@ -16446,6 +16446,9 @@ var NEXT_STEPS = {
   ],
   whatap_service_topology: [
     "**Next**: `whatap_apm_anomaly(projectCode)` to detect performance issues."
+  ],
+  whatap_error_summary: [
+    "**Next**: `whatap_apm_anomaly(projectCode)` to see which agents the errors line up with."
   ]
 };
 function appendNextSteps(text, toolName) {
@@ -16478,10 +16481,10 @@ function fenceMxql(src) {
   return "```mxql\n" + shown + "\n```";
 }
 function fmtWindow(stime, etime) {
-  const iso2 = (ms) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
+  const iso3 = (ms) => new Date(ms).toISOString().replace("T", " ").slice(0, 19);
   const kst = (ms) => new Date(ms + 9 * 36e5).toISOString().replace("T", " ").slice(0, 19);
   return `${stime} \u2192 ${etime}
-  UTC: ${iso2(stime)} \u2192 ${iso2(etime)}
+  UTC: ${iso3(stime)} \u2192 ${iso3(etime)}
   KST: ${kst(stime)} \u2192 ${kst(etime)}`;
 }
 function renderEcho(e, projectCode, timeRange) {
@@ -16819,8 +16822,8 @@ function writeJsonl(target, rows, stime) {
 }
 function csvCell(v) {
   if (v === void 0 || v === null) return "";
-  const s = typeof v === "object" ? JSON.stringify(v) : String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  const s2 = typeof v === "object" ? JSON.stringify(v) : String(v);
+  return /[",\n\r]/.test(s2) ? `"${s2.replace(/"/g, '""')}"` : s2;
 }
 function timeStats(times) {
   if (times.length === 0) return { distinctTimes: 0 };
@@ -17009,10 +17012,10 @@ function suggestPromql(name, type) {
 function fmtTime2(ms) {
   return new Date(ms).toISOString().replace("T", " ").slice(0, 19) + " UTC";
 }
-function fmtNum2(n) {
-  if (Number.isInteger(n)) return String(n);
-  if (Math.abs(n) < 0.01) return n.toExponential(2);
-  return n.toFixed(2);
+function fmtNum2(n2) {
+  if (Number.isInteger(n2)) return String(n2);
+  if (Math.abs(n2) < 0.01) return n2.toExponential(2);
+  return n2.toFixed(2);
 }
 function fmtCell(v) {
   if (v === null || v === void 0) return "-";
@@ -17092,13 +17095,13 @@ function parseTimePoint(value, name = "time") {
   const v = value.trim();
   if (/^\d{13}$/.test(v)) return parseInt(v, 10);
   if (/^\d{10}$/.test(v)) return parseInt(v, 10) * 1e3;
-  const iso2 = v.match(ISO_WITH_OFFSET);
-  if (iso2) {
-    let offset = iso2[3].toUpperCase();
+  const iso3 = v.match(ISO_WITH_OFFSET);
+  if (iso3) {
+    let offset = iso3[3].toUpperCase();
     if (offset !== "Z" && !offset.includes(":")) {
       offset = `${offset.slice(0, 3)}:${offset.slice(3)}`;
     }
-    const ms = Date.parse(`${iso2[1]}T${iso2[2]}${offset}`);
+    const ms = Date.parse(`${iso3[1]}T${iso3[2]}${offset}`);
     if (!Number.isNaN(ms)) return ms;
   }
   if (ISO_WITHOUT_OFFSET.test(v)) {
@@ -47004,6 +47007,21 @@ function isTemplateCategory(category) {
 function decodeCategoryArg(category) {
   return category.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d))).replace(/&amp;/g, "&");
 }
+function fillMarkers(raw, values) {
+  const missing = /* @__PURE__ */ new Set();
+  const out = raw.replace(MARKER_RE, (_m, name) => {
+    const key = name.trim();
+    if (!(key in values)) {
+      missing.add(key);
+      return "";
+    }
+    return values[key];
+  });
+  if (missing.size > 0) {
+    throw new Error(`Template markers left without a value: ${[...missing].join(", ")}`);
+  }
+  return out;
+}
 
 // src/yard/paths.ts
 var PREFIX_RE = /^(?:src\/main\/resources\/|target\/classes\/)+/;
@@ -47144,7 +47162,7 @@ function fuzzyMatch(path, limit = 5) {
     }
   }
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map((s) => s.entry);
+  return scored.slice(0, limit).map((s2) => s2.entry);
 }
 function getPathsForCategory(category) {
   const base = category.replace(/\{[^}]+\}$/, "");
@@ -47401,7 +47419,7 @@ function suggestExecutablePaths(path, baseCategories, limit = 5) {
     scored.push({ entry, score });
   }
   scored.sort((a, b) => b.score - a.score || a.entry.path.length - b.entry.path.length);
-  return scored.slice(0, limit).map((s) => s.entry);
+  return scored.slice(0, limit).map((s2) => s2.entry);
 }
 function buildMarkerErrorResponse(path, scan, projectCode, baseCategories) {
   const alternatives = suggestExecutablePaths(path, baseCategories, 5);
@@ -47444,9 +47462,9 @@ function buildPathNotFoundResponse(path, projectCode, serverMessage) {
   const lines = [`**Error**: MXQL path "${path}" not found on the server.`];
   if (suggestions.length > 0) {
     lines.push("", "**Did you mean:**");
-    for (const s of suggestions) {
-      const desc = s.description ? ` \u2014 ${translateDescription(s.path, s.description)}` : "";
-      lines.push(`- \`${s.path}\`${desc}`);
+    for (const s2 of suggestions) {
+      const desc = s2.description ? ` \u2014 ${translateDescription(s2.path, s2.description)}` : "";
+      lines.push(`- \`${s2.path}\`${desc}`);
     }
   }
   lines.push("", `**Server message**: ${serverMessage}`);
@@ -47708,8 +47726,8 @@ function registerYardTools(server, client) {
             "| Domain | Queries | Description |",
             "| --- | --- | --- |"
           ];
-          for (const s of summaries) {
-            lines2.push(`| ${s.domain} | ${s.count} | ${s.description} |`);
+          for (const s2 of summaries) {
+            lines2.push(`| ${s2.domain} | ${s2.count} | ${s2.description} |`);
           }
           lines2.push(
             "",
@@ -47723,7 +47741,7 @@ function registerYardTools(server, client) {
         if (entries.length === 0) {
           const hint = domain ? `No queries found in domain "${domain}".` : `No queries matching "${search}".`;
           const summaries = getDomainSummary();
-          const available = summaries.map((s) => s.domain).join(", ");
+          const available = summaries.map((s2) => s2.domain).join(", ");
           return {
             content: [
               {
@@ -47859,9 +47877,9 @@ Verify the metric exists: \`whatap_data_availability(projectCode=${projectCode})
           ];
           if (suggestions.length > 0) {
             lines2.push("", "**Did you mean:**");
-            for (const s of suggestions) {
-              const desc = s.description ? ` \u2014 ${translateDescription(s.path, s.description)}` : "";
-              lines2.push(`- \`${s.path}\`${desc}`);
+            for (const s2 of suggestions) {
+              const desc = s2.description ? ` \u2014 ${translateDescription(s2.path, s2.description)}` : "";
+              lines2.push(`- \`${s2.path}\`${desc}`);
             }
           }
           lines2.push(
@@ -48354,9 +48372,9 @@ Create new queries with \`whatap_create_promql\`.`
           const lines = [`**Error**: MXQL path "${path}" not found on the server.`];
           if (suggestions.length > 0) {
             lines.push("", "**Did you mean:**");
-            for (const s of suggestions) {
-              const desc = s.description ? ` \u2014 ${translateDescription(s.path, s.description)}` : "";
-              lines.push(`- \`${s.path}\`${desc}`);
+            for (const s2 of suggestions) {
+              const desc = s2.description ? ` \u2014 ${translateDescription(s2.path, s2.description)}` : "";
+              lines.push(`- \`${s2.path}\`${desc}`);
             }
           }
           lines.push("", `Use \`whatap_data_availability(projectCode=${projectCode})\` to see available paths.`);
@@ -48371,33 +48389,33 @@ Create new queries with \`whatap_create_promql\`.`
     }
   );
 }
-function formatOutputSummary(path, target, s, rows, q) {
-  const n = (v) => v.toLocaleString("en-US");
+function formatOutputSummary(path, target, s2, rows, q) {
+  const n2 = (v) => v.toLocaleString("en-US");
   const lines = [
     `## ${path} \u2192 ${target.path}`,
     "",
     `**Period**: ${fmtTime(q.stime)} \u2192 ${fmtTime(q.etime)}`,
-    target.continuing ? `**Saved**: ${n(s.written)} rows appended; ${n(s.replaced)} rows at or after stime replaced. File now holds ${n(s.totalRows)} rows.` : `**Saved**: ${n(s.written)} rows to a new ${target.format.toUpperCase()} file.`
+    target.continuing ? `**Saved**: ${n2(s2.written)} rows appended; ${n2(s2.replaced)} rows at or after stime replaced. File now holds ${n2(s2.totalRows)} rows.` : `**Saved**: ${n2(s2.written)} rows to a new ${target.format.toUpperCase()} file.`
   ];
-  if (s.first !== void 0 && s.last !== void 0) {
+  if (s2.first !== void 0 && s2.last !== void 0) {
     lines.push(
-      `**File covers**: ${fmtTime(s.first)} \u2192 ${fmtTime(s.last)}, ${n(s.distinctTimes)} distinct times`
+      `**File covers**: ${fmtTime(s2.first)} \u2192 ${fmtTime(s2.last)}, ${n2(s2.distinctTimes)} distinct times`
     );
   }
-  lines.push(`**Columns**: ${s.columns.join(", ")}`, "");
+  lines.push(`**Columns**: ${s2.columns.join(", ")}`, "");
   const truncated = rows.length >= q.limit;
   const coverage = truncated ? truncatedCoverage(rows, q.etime) : void 0;
   if (coverage && coverage.first === coverage.last) {
     lines.push(
-      `> **Truncated at limit ${n(q.limit)}.** All rows of this call are at ${fmtTime(coverage.last)}, and that time alone has more rows than the limit, so continuing from it would return the same rows. Call again with the same outputFile, stime="${isoTime(coverage.last)}" and a limit well above ${n(q.limit)}.`
+      `> **Truncated at limit ${n2(q.limit)}.** All rows of this call are at ${fmtTime(coverage.last)}, and that time alone has more rows than the limit, so continuing from it would return the same rows. Call again with the same outputFile, stime="${isoTime(coverage.last)}" and a limit well above ${n2(q.limit)}.`
     );
   } else if (coverage) {
     lines.push(
-      `> **Truncated at limit ${n(q.limit)}.** This call's rows end at ${fmtTime(coverage.last)}; rows at that time may be partial and nothing after it was returned. To continue, call again with the same outputFile, stime="${isoTime(coverage.last)}" and the same etime. The file replaces its rows from that time, so do not de-duplicate. Keep limit large (up to 100,000) to keep the number of requests down.`
+      `> **Truncated at limit ${n2(q.limit)}.** This call's rows end at ${fmtTime(coverage.last)}; rows at that time may be partial and nothing after it was returned. To continue, call again with the same outputFile, stime="${isoTime(coverage.last)}" and the same etime. The file replaces its rows from that time, so do not de-duplicate. Keep limit large (up to 100,000) to keep the number of requests down.`
     );
-  } else if (truncated && s.first === void 0) {
+  } else if (truncated && s2.first === void 0) {
     lines.push(
-      `> Result may be truncated at limit ${n(q.limit)}. Rows have no time column, so this file cannot be continued; raise limit or narrow the query.`
+      `> Result may be truncated at limit ${n2(q.limit)}. Rows have no time column, so this file cannot be continued; raise limit or narrow the query.`
     );
   } else {
     lines.push(
@@ -48444,8 +48462,8 @@ function num(row, field) {
   const v = row[field];
   if (typeof v === "number") return v;
   if (typeof v === "string") {
-    const n = parseFloat(v);
-    return isNaN(n) ? 0 : n;
+    const n2 = parseFloat(v);
+    return isNaN(n2) ? 0 : n2;
   }
   return 0;
 }
@@ -48615,19 +48633,19 @@ function registerMeshTools(server, client) {
           )
         );
         const subQueryNotes = [];
-        const resolved = settled.map((s, i) => {
-          if (s.status === "rejected") {
+        const resolved = settled.map((s2, i) => {
+          if (s2.status === "rejected") {
             subQueryNotes.push(
-              `\`${SUB_QUERIES[i]}\` failed: ${s.reason?.message ?? String(s.reason)}`
+              `\`${SUB_QUERIES[i]}\` failed: ${s2.reason?.message ?? String(s2.reason)}`
             );
             return [];
           }
-          const serverError = extractServerError(s.value);
+          const serverError = extractServerError(s2.value);
           if (serverError !== null) {
             subQueryNotes.push(`\`${SUB_QUERIES[i]}\` server error: ${serverError}`);
             return [];
           }
-          return s.value;
+          return s2.value;
         });
         if (subQueryNotes.length === SUB_QUERIES.length) {
           return buildServerErrorResponse({
@@ -48653,7 +48671,7 @@ function registerMeshTools(server, client) {
 **No rows returned by any of the 4 APM sub-queries.** The server reported no error for them, so this is not evidence that the project is not an APM project or that no agents are running.
 
 ` + (subQueryNotes.length > 0 ? `**Sub-query notes:**
-${subQueryNotes.map((n) => `- ${n}`).join("\n")}
+${subQueryNotes.map((n2) => `- ${n2}`).join("\n")}
 
 ` : "") + `**To narrow it down:**
 - Verify project type: \`whatap_project_info(projectCode=${projectCode})\`
@@ -48670,7 +48688,7 @@ ${subQueryNotes.map((n) => `- ${n}`).join("\n")}
           actTxRows,
           sensitivity
         );
-        const anomalyAgents = summaries.filter((s) => s.anomalies.length > 0);
+        const anomalyAgents = summaries.filter((s2) => s2.anomalies.length > 0);
         const lines = [
           `## APM Anomaly Detection \u2014 Project ${projectCode}`,
           "",
@@ -48680,7 +48698,7 @@ ${subQueryNotes.map((n) => `- ${n}`).join("\n")}
         if (subQueryNotes.length > 0) {
           lines.push(
             `> **Partial result \u2014 ${subQueryNotes.length} of ${SUB_QUERIES.length} sub-queries did not return data:**`,
-            ...subQueryNotes.map((n) => `> - ${n}`),
+            ...subQueryNotes.map((n2) => `> - ${n2}`),
             ">",
             "> Metrics from the failed sub-queries are missing below; absent values are not measurements.",
             ""
@@ -48711,10 +48729,10 @@ ${subQueryNotes.map((n) => `- ${n}`).join("\n")}
           "| Agent | TPS (avg) | Resp Time (avg/max) | Errors | Active TX (>8s) |",
           "| --- | --- | --- | --- | --- |"
         );
-        for (const s of summaries) {
-          const respCol = s.respTimeAvg > 0 ? `${fmtMs(s.respTimeAvg)} / ${fmtMs(s.respTimeMax)}` : "\u2014";
+        for (const s2 of summaries) {
+          const respCol = s2.respTimeAvg > 0 ? `${fmtMs(s2.respTimeAvg)} / ${fmtMs(s2.respTimeMax)}` : "\u2014";
           lines.push(
-            `| ${s.oname} | ${s.tpsAvg.toFixed(1)} | ${respCol} | ${s.totalErrors} | ${s.activeTx8} |`
+            `| ${s2.oname} | ${s2.tpsAvg.toFixed(1)} | ${respCol} | ${s2.totalErrors} | ${s2.activeTx8} |`
           );
         }
         const text = appendNextSteps(lines.join("\n"), "whatap_apm_anomaly");
@@ -49851,7 +49869,7 @@ Example with OS: whatap_install_agent(projectCode=38, os="debian")`,
           client.getProjectAccess(projectCode)
         ]);
         const platform = (projectInfo.platform ?? "unknown").toUpperCase();
-        const serverHost = access.whatap_server.map((s) => s.host).join("/");
+        const serverHost = access.whatap_server.map((s2) => s2.host).join("/");
         const serverPort = String(access.whatap_server[0]?.port ?? 6600);
         const vars = {
           accesskey: access.accesskey,
@@ -49869,8 +49887,8 @@ Example with OS: whatap_install_agent(projectCode=38, os="debian")`,
           "",
           `- **accesskey**: \`${access.accesskey}\``
         ];
-        for (const s of access.whatap_server) {
-          lines.push(`- **server**: \`${s.host}:${s.port}\``);
+        for (const s2 of access.whatap_server) {
+          lines.push(`- **server**: \`${s2.host}:${s2.port}\``);
         }
         lines.push("");
         const guide = getInstallGuide(platform);
@@ -49943,6 +49961,286 @@ Example with OS: whatap_install_agent(projectCode=38, os="debian")`,
   );
 }
 
+// src/yard/stat-adaptors.ts
+var GROUP_CAP = 1e4;
+var HOURLY_FROM_MS = 864e5 - 5e3;
+function template(path) {
+  const raw = CATALOG_RAW[path];
+  if (!raw) throw new Error(`Stat template not in catalog: ${path}`);
+  return raw;
+}
+var PROJECT_AGENT = "";
+function errorStatQuery(stime, etime, limit) {
+  const path = etime - stime >= HOURLY_FROM_MS ? "mxql/apm/stat/error_stat_1h" : "mxql/apm/stat/error_stat";
+  const order = "count";
+  const mql = fillMarkers(template(path), {
+    FILTER: "",
+    AGENT: PROJECT_AGENT,
+    ORDER1: `ORDER {key:${order}, sort:desc}`,
+    ORDER2: `ORDER {key:${order}, sort:desc}`,
+    LIMIT1: `LIMIT {everytime:${GROUP_CAP}}`,
+    LIMIT2: `LIMIT ${limit}`
+  });
+  return { path, mql };
+}
+function httpcStatQuery(stime, etime, limit) {
+  const path = etime - stime >= HOURLY_FROM_MS ? "mxql/apm/stat/httpc_stat_1h" : "mxql/apm/stat/httpc_stat";
+  const order = "error";
+  const mql = fillMarkers(template(path), {
+    FILTER: "",
+    AGENT: PROJECT_AGENT,
+    ORDER1: `ORDER {key:${order}, sort:desc}`,
+    // The adaptor orders by one key; ties on error (often all 0) then fall in
+    // arbitrary order, so calls break them here.
+    ORDER2: `ORDER {key:[${order},total], sort:[desc,desc]}`,
+    LIMIT1: `LIMIT {everytime:${GROUP_CAP}}`,
+    LIMIT2: `LIMIT ${limit}`
+  });
+  return { path, mql };
+}
+function coverageOf(statMql, field) {
+  const lines = statMql.split("\n");
+  const cut = lines.findIndex((l) => l.trim().startsWith("HVTEXT"));
+  const head = (cut >= 0 ? lines.slice(0, cut) : lines).join("\n");
+  return [
+    head,
+    'CREATE {key:one, expr:"1"}',
+    "DELETE time",
+    `GROUP {pk:[one], merge:[${field}]}`,
+    `UPDATE {key:${field}, value:sum}`
+  ].join("\n");
+}
+function errorClassTotalsMql(stime, etime) {
+  const category = etime - stime >= HOURLY_FROM_MS ? "db3_stat_error{h1}" : "db3_stat_error";
+  return [
+    `CATEGORY ${category}`,
+    "FLEXLOAD",
+    "CREATE {key:tt, from:time}",
+    "GROUP {timeunit:1h, merge:[count], pk:[classHash], last:[tt]}",
+    'UPDATE {key:"count", value:sum}',
+    "DELETE time",
+    "GROUP {merge:[count], pk:[classHash], last:[tt]}",
+    'UPDATE {key:"count", value:sum}',
+    "ORDER {key:count, sort:desc}",
+    "HVTEXT {hash:classHash, key:class, type:error, timefield:tt}"
+  ].join("\n");
+}
+
+// src/tools/errors.ts
+var MAX_WINDOW_MS2 = 32 * 864e5;
+var STACK_SCAN = 50;
+var CONCURRENCY = 3;
+var ERRORSNAP_LINE = "ERRORSNAP {snap:snapSeq, key:stack, timefield:tt}";
+function n(row, key) {
+  const v = row[key];
+  const x = typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN;
+  return Number.isFinite(x) ? x : 0;
+}
+function s(row, key) {
+  const v = row[key];
+  return typeof v === "string" ? v : "";
+}
+function cell(text, max = 120) {
+  const t = text.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+  return t.length > max ? t.slice(0, max - 1) + "\u2026" : t;
+}
+function iso2(ms) {
+  return ms > 0 ? new Date(ms).toISOString().replace(".000Z", "Z") : "-";
+}
+function readCoverage(rows, field) {
+  const r = rows.find((x) => x && typeof x === "object" && "one" in x);
+  if (!r) return null;
+  return { groups: n(r, "_rows_"), covered: Math.round(n(r, field)) };
+}
+function coverageNote(cov, exactTotal) {
+  if (!cov) return "Coverage check returned no row; the table may be incomplete.";
+  const short = exactTotal !== null ? cov.covered < Math.round(exactTotal) : cov.groups >= GROUP_CAP;
+  if (!short) return null;
+  const of = exactTotal !== null ? ` of ${Math.round(exactTotal).toLocaleString()}` : "";
+  return `**Incomplete**: the server keeps ${GROUP_CAP.toLocaleString()} groups and dropped the rest (${cov.covered.toLocaleString()}${of} counted in ${cov.groups.toLocaleString()} groups). Counts and ranks below cover only the kept groups; the WhaTap UI statistics screen shows the same cut. Narrow the time range for complete rankings.`;
+}
+async function pool(tasks, limit) {
+  const out = new Array(tasks.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length) {
+      const i = next++;
+      try {
+        out[i] = { status: "fulfilled", value: await tasks[i]() };
+      } catch (reason) {
+        out[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return out;
+}
+function registerErrorTools(server, client) {
+  server.tool(
+    "whatap_error_summary",
+    `APM error and outbound HTTP call statistics with readable text, as the WhaTap UI's statistics screens show them: error class, message and service; external host, URL, calls, errors and time. Adds the stack trace of errors the agent recorded one for. Use this instead of whatap_query_data when you need to know WHICH errors occurred, because raw stat categories return only hashes.
+
+Stacks: only Java agents record them, and only for real exceptions. Agent-generated errors such as STATUS_ERROR(4xx/5xx) and HTTPC_ERROR carry no stack.
+
+PREREQUISITES: projectCode from whatap_list_projects (an APM project, or a Kubernetes project whose pods run an APM agent).
+
+Example: whatap_error_summary(projectCode=12345, timeRange="1h")`,
+    {
+      projectCode: z.number().describe(PARAM_PROJECT_CODE),
+      timeRange: z.string().default("1h").describe('Time range (default: "1h"). Examples: "30m", "6h", "1d". Must be under 32 days. From 1 day on, hourly statistics are read.'),
+      limit: z.number().default(20).describe("Rows per table (default 20, max 100)."),
+      stackLines: z.number().default(15).describe("Stack lines shown per error (default 15, 0 = no stacks). Stacks are shown for up to 5 errors.")
+    },
+    async ({ projectCode, timeRange, limit, stackLines }) => {
+      const tool = "whatap_error_summary";
+      try {
+        const { stime, etime } = parseTimeRange(timeRange);
+        if (etime - stime >= MAX_WINDOW_MS2) {
+          return {
+            content: [{ type: "text", text: `**Rejected before sending**: the server refuses windows of 32 days or more (got "${timeRange}").` }],
+            isError: true
+          };
+        }
+        const top = Math.max(1, Math.min(100, Math.floor(limit)));
+        const withStack = stackLines > 0;
+        const err = errorStatQuery(stime, etime, withStack ? Math.max(top, STACK_SCAN) : top);
+        const httpc = httpcStatQuery(stime, etime, top);
+        const queries = {
+          errClass: errorClassTotalsMql(stime, etime),
+          errStat: withStack ? `${err.mql}
+${ERRORSNAP_LINE}` : err.mql,
+          errCov: coverageOf(err.mql, "count"),
+          httpcStat: httpc.mql,
+          httpcCov: coverageOf(httpc.mql, "httpc_count")
+        };
+        const names = Object.keys(queries);
+        const settled = await pool(
+          names.map(
+            (k) => () => client.executeMxqlText(projectCode, { stime, etime, mql: queries[k], limit: 1e5 })
+          ),
+          CONCURRENCY
+        );
+        const res = {};
+        for (let i = 0; i < names.length; i++) {
+          const r = settled[i];
+          if (r.status === "rejected") throw r.reason;
+          const serverError = extractServerError(r.value);
+          if (serverError !== null) {
+            return buildServerErrorResponse({
+              toolName: tool,
+              serverMessage: serverError,
+              projectCode,
+              timeRange,
+              echo: {
+                endpoint: "mxql/text",
+                sentMql: queries[names[i]],
+                serverExpanded: false,
+                stime,
+                etime,
+                limit: 1e5,
+                pageKey: MXQL_PAGE_KEY,
+                rawRowCount: r.value.length,
+                dataRowCount: 0
+              }
+            });
+          }
+          res[names[i]] = r.value;
+        }
+        const classRows = res.errClass;
+        const errTotal = classRows.reduce((a, r) => a + n(r, "count"), 0);
+        const ranked = res.errStat;
+        const detail = ranked.slice(0, top);
+        const httpcRows = res.httpcStat;
+        const lines = [
+          `## Error Summary \u2014 Project ${projectCode}`,
+          "",
+          `**Window**: ${iso2(stime)} \u2192 ${iso2(etime)} (${timeRange}) | **Errors**: ${Math.round(errTotal).toLocaleString()} | **Error classes**: ${classRows.length}`,
+          `**Source**: \`${err.path}\` and \`${httpc.path}\`, the queries behind the WhaTap UI statistics screens.`,
+          ""
+        ];
+        if (classRows.length === 0 && httpcRows.length === 0) {
+          lines.push(
+            `**No error or outbound HTTP rows.** The server reported no error, so this does not show the application is healthy. Consistent with it, none confirmed here: no APM agent in this project, no traffic in the window, or agents not reporting. Check \`whatap_list_agents(projectCode=${projectCode})\`.`
+          );
+          return { content: [{ type: "text", text: appendNextSteps(lines.join("\n"), tool) }] };
+        }
+        if (classRows.length > 0) {
+          lines.push("### Errors by class (exact totals)", "", "| Class | Count | Last hour |", "| --- | ---: | --- |");
+          for (const r of classRows.slice(0, top)) {
+            lines.push(`| ${cell(s(r, "class") || `hash ${n(r, "classHash")}`)} | ${Math.round(n(r, "count")).toLocaleString()} | ${iso2(n(r, "tt"))} |`);
+          }
+          if (classRows.length > top) lines.push("", `${classRows.length - top} more classes not shown.`);
+          lines.push("");
+          lines.push(
+            "### Top errors (class + service + message)",
+            "",
+            "| # | Class | Message | Service | Count | Last hour |",
+            "| ---: | --- | --- | --- | ---: | --- |"
+          );
+          detail.forEach((r, i) => {
+            lines.push(
+              `| ${i + 1} | ${cell(s(r, "class"), 80)} | ${cell(s(r, "msg"), 100)} | ${cell(s(r, "service") || "-", 80)} | ${Math.round(n(r, "count")).toLocaleString()} | ${iso2(n(r, "tt"))} |`
+            );
+          });
+          const note = coverageNote(readCoverage(res.errCov, "count"), errTotal);
+          if (note) lines.push("", note);
+          lines.push(
+            "",
+            "A blank service means the error happened outside a traced transaction or its text was not found. Last hour is the start of the last hour the row occurred in (the stat tables keep hourly buckets)."
+          );
+          lines.push("");
+          if (withStack) {
+            const stacked = ranked.filter((r) => s(r, "stack").trim() !== "").slice(0, 5);
+            lines.push(
+              "### Stacks",
+              "",
+              `Most frequent errors that have a recorded stack, from the top ${ranked.length} above (rank shown). Each stack is from the last occurrence.`,
+              ""
+            );
+            if (stacked.length === 0) {
+              lines.push(
+                `None of the top ${ranked.length} errors has a recorded stack. Only Java agents record stacks, and agent-generated errors (STATUS_ERROR, HTTPC_ERROR) have none.`,
+                ""
+              );
+            }
+            for (const r of stacked) {
+              const idx = ranked.indexOf(r) + 1;
+              const st = s(r, "stack").split("\n").filter((x) => x.trim() !== "");
+              lines.push(
+                `**#${idx} ${cell(s(r, "class"), 80)}**: ${cell(s(r, "msg"), 160)} (${Math.round(n(r, "count")).toLocaleString()} times, service ${cell(s(r, "service") || "-", 80)}, ${st.length} frames)`,
+                "",
+                "```"
+              );
+              lines.push(...st.slice(0, stackLines));
+              if (st.length > stackLines) lines.push(`... ${st.length - stackLines} more frames`);
+              lines.push("```", "");
+            }
+          }
+        }
+        lines.push("### Outbound HTTP calls (most errors first, then most calls)", "");
+        if (httpcRows.length === 0) {
+          lines.push("No outbound HTTP call rows in this window.");
+        } else {
+          lines.push(
+            "| Host | Port | URL | Calls | Errors | Avg | Max | Last caller service | Last hour |",
+            "| --- | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |"
+          );
+          for (const r of httpcRows) {
+            lines.push(
+              `| ${cell(s(r, "host") || `hash ${n(r, "hostHash")}`, 60)} | ${n(r, "port") || "-"} | ${cell(s(r, "url") || `hash ${n(r, "urlHash")}`, 100)} | ${Math.round(n(r, "total")).toLocaleString()} | ${Math.round(n(r, "error")).toLocaleString()} | ${Math.round(n(r, "avg"))}ms | ${Math.round(n(r, "max"))}ms | ${cell(s(r, "service") || "-", 60)} | ${iso2(n(r, "tt"))} |`
+            );
+          }
+          const note = coverageNote(readCoverage(res.httpcCov, "httpc_count"), null);
+          if (note) lines.push("", note);
+        }
+        return { content: [{ type: "text", text: appendNextSteps(lines.join("\n"), tool) }] };
+      } catch (err) {
+        return classifyAndBuildError(err, { toolName: tool, projectCode, timeRange });
+      }
+    }
+  );
+}
+
 // src/tools/index.ts
 function registerAllTools(server, client) {
   registerProjectTools(server, client);
@@ -49950,6 +50248,7 @@ function registerAllTools(server, client) {
   registerMeshTools(server, client);
   registerInstallTools(server, client);
   registerPromqlTools(server, client);
+  registerErrorTools(server, client);
 }
 
 // src/index.ts
