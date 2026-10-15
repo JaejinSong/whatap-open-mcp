@@ -1,6 +1,6 @@
 # whatap-mcp — Claude Code Context
 
-MCP server bridging AI assistants to WhaTap monitoring. 10 tools (3 project + 3 data + 2 mesh + 1 install + 1 promql), MXQL catalog (815 entries) + PromQL/OpenMetrics support, semantic result classification, live-tested.
+MCP server bridging AI assistants to WhaTap monitoring. 11 tools (3 project + 3 data + 2 mesh + 1 errors + 1 install + 1 promql), MXQL catalog (815 entries) + PromQL/OpenMetrics support, semantic result classification, live-tested.
 
 ## Commands
 
@@ -48,6 +48,7 @@ src/
 │   ├── project.ts (3)    # list_projects, project_info, list_agents
 │   ├── yard.ts (3)       # data_availability, describe_query, query_data (+PromQL/savedQuery)
 │   ├── mesh.ts (2)       # apm_anomaly (4-query parallel), service_topology (NPM)
+│   ├── errors.ts (1)     # error_summary (stat_error/stat_httpc + HVTEXT/ERRORSNAP, group-cap check)
 │   ├── install.ts (1)    # install_agent (fetch access + generate install commands for 29 platforms)
 │   └── promql.ts (1)     # create_promql (validate + save reusable PromQL queries)
 └── utils/
@@ -129,6 +130,20 @@ max 3 concurrent MXQL queries per project (`mcp_api_call_limit`).
 9. Field names are **case-sensitive** — `cpu_usr` not `cpuUsr`
 10. Times are **Unix milliseconds** — not seconds
 
+## MXQL Aggregation Gotchas (measured 2026-10-11, see `src/yard/stat-adaptors.ts`)
+
+11. GROUP without `timeunit` groups **per second**, so stat rows stay apart. To total a window,
+    follow the stat templates: `CREATE {key:tt, from:time}` → `GROUP {timeunit:1h, ..., last:[tt]}`
+    → sum → `DELETE time` → GROUP again on the same pk (no time field = one group).
+12. GROUP `merge` outputs **avg** by default — add `UPDATE {key:f, value:sum}` for totals.
+13. Pass `timefield:tt` to HVTEXT/ERRORSNAP. `timeunit:whole` (undocumented) overwrites `time`
+    with the window start and text/stack lookups then come back empty. `tt` itself is rounded
+    to the hour by the first GROUP, so it is the last hour, not the last occurrence.
+14. GROUP keeps **10,000 groups** and drops the rest silently; `rows:30000` did not raise it.
+    The original `error_stat_1h` hits this too (pcode 5490, 1d: 66,494 of 85,093 counted).
+15. `/open-mcp/json/agents` rows carry **no `oid`** — `resolveOids()` never matches. Get
+    oid→oname from `CATEGORY app_counter` instead.
+
 ## MXQL Query Pattern
 
 ```
@@ -150,7 +165,7 @@ SELECT [field1, field2, ...]
 | `/open-mcp/api/flush/mxql/path` | POST | Project | MXQL path queries (yard .mql files) |
 | `/open-mcp/api/json/project/access/{pcode}` | GET | Project | Agent access credentials (accesskey + server) |
 
-## Tools (10)
+## Tools (11)
 
 | Tool | Description |
 |------|-------------|
@@ -163,6 +178,7 @@ SELECT [field1, field2, ...]
 | `whatap_create_promql` | Create, validate, and save a reusable PromQL query for OpenMetrics data |
 | `whatap_apm_anomaly` | Multi-query APM anomaly detection (TPS, latency, errors, active TX per agent) |
 | `whatap_service_topology` | Service connectivity map with bottleneck detection (requires NPM) |
+| `whatap_error_summary` | Errors by class/message and outbound HTTP by host/URL, hashes resolved via HVTEXT, Java stacks via ERRORSNAP |
 | `whatap_install_agent` | Get agent install commands for 29 platforms with pre-filled credentials (auto-detects platform, optional OS filter) |
 
 ## Key Probe Categories
@@ -215,7 +231,7 @@ SELECT [field1, field2, ...]
 ## Current Status
 
 - **Version:** 1.2.1 (single source: `src/version.ts`)
-- **Tools:** 10 (3 project + 3 data + 2 mesh + 1 install + 1 promql)
+- **Tools:** 11 (3 project + 3 data + 2 mesh + 1 errors + 1 install + 1 promql)
 - **Catalog:** 815 entries across 35+ domains (generated from yard; 116 Maven build-layout duplicates collapsed)
 - **English translations:** 130 description entries (120 base + 10 DB long session with unit info), 135 MXQL comment lines, 16 field-metadata overrides
 - **Output language:** English only — `tests/no-korean-output.test.ts` fails the build if a catalog/field-metadata regeneration introduces untranslated Korean

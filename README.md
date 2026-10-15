@@ -168,6 +168,7 @@ The server provides 8 tools to your AI assistant:
 | `whatap_query_mxql` | Run a query — returns data with context, units, and thresholds |
 | `whatap_apm_anomaly` | Detect APM performance anomalies |
 | `whatap_service_topology` | Map service connections and bottlenecks |
+| `whatap_error_summary` | Errors and outbound HTTP calls with readable class, message, URL and Java stacks |
 
 Your AI assistant picks the right tools automatically. You just ask questions in plain language.
 

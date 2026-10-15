@@ -4,7 +4,7 @@ import { WhatapApiClient } from '../src/api/client.ts';
 import { registerAllTools } from '../src/tools/index.ts';
 
 describe('tool registration', () => {
-  it('registers all 10 tools with correct names', () => {
+  it('registers all 11 tools with correct names', () => {
     const server = new McpServer({ name: 'test', version: '0.0.0' });
     const client = new WhatapApiClient({
       apiToken: 'test',
@@ -14,7 +14,7 @@ describe('tool registration', () => {
     registerAllTools(server, client);
 
     const tools = (server as any)._tools as Map<string, unknown>;
-    expect(tools.size).toBe(10);
+    expect(tools.size).toBe(11);
 
     const expectedNames = [
       'whatap_list_projects',
@@ -27,6 +27,7 @@ describe('tool registration', () => {
       'whatap_service_topology',
       'whatap_install_agent',
       'whatap_create_promql',
+      'whatap_error_summary',
     ];
 
     for (const name of expectedNames) {
