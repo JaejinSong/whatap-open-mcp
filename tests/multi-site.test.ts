@@ -169,3 +169,43 @@ describe('User-Agent', () => {
     expect(USER_AGENT).toMatch(/^whatap-mcp\/\d+\.\d+\.\d+$/);
   });
 });
+
+describe('same pcode on two servers', () => {
+  it('keeps saved PromQL queries apart per server', async () => {
+    const { getPromqlQueryStore } = await import('../src/tools/promql.ts');
+    const store = getPromqlQueryStore();
+    const q = (query: string) => ({
+      name: 'cpu', description: '', query, projectCode: 1, metricType: '', createdAt: '', lastUsed: '',
+    });
+    store.save('https://self.whatap.io', q('self-query'));
+    store.save('https://api.whatap.io', q('service-query'));
+    expect(store.get('https://self.whatap.io', 1, 'cpu')?.query).toBe('self-query');
+    expect(store.get('https://api.whatap.io', 1, 'cpu')?.query).toBe('service-query');
+    expect(store.listForProject('https://self.whatap.io', 1).map((x) => x.query)).toEqual(['self-query']);
+    expect(store.get('https://other.example', 1, 'cpu')).toBeUndefined();
+  });
+
+  it('gives each server its own project token cache', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string, init: RequestInit) => {
+      const h = init.headers as Record<string, string>;
+      calls.push(`${new URL(u).host} ${h['x-whatap-token']}`);
+      const tok = new URL(u).host.startsWith('self') ? 'p-self' : 'p-service';
+      return new Response(JSON.stringify({ data: [{ projectCode: 1, apiToken: tok }] }), { status: 200 });
+    }));
+    try {
+      const r = new SiteRouter(loadSites(TWO));
+      const c = r.routedClient();
+      for (const name of ['self', 'service', 'self']) {
+        await r.run(r.resolve(name)!, () => c.getProjectInfo(1));
+      }
+      expect(calls.filter((x) => !x.includes(' tok-'))).toEqual([
+        'self.whatap.io p-self',
+        'api.whatap.io p-service',
+        'self.whatap.io p-self',
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
