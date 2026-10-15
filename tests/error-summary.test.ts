@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readCoverage, coverageNote } from '../src/tools/errors.ts';
+import { readCoverage, coverageNote, lastSeenColumn } from '../src/tools/errors.ts';
 import { fillMarkers, scanMarkers } from '../src/yard/markers.ts';
 import {
   GROUP_CAP,
@@ -7,6 +7,7 @@ import {
   httpcStatQuery,
   coverageOf,
   errorClassTotalsMql,
+  isHourlyWindow,
 } from '../src/yard/stat-adaptors.ts';
 
 const HOUR = 3_600_000;
@@ -84,5 +85,14 @@ describe('coverage note', () => {
 
   it('says so when the check returned nothing', () => {
     expect(coverageNote(readCoverage([], 'count'), null)).toMatch(/may be incomplete/);
+  });
+});
+
+describe('last-seen column', () => {
+  it('names the 5-minute unit under a day and the hour from a day on', () => {
+    expect(isHourlyWindow(NOW - HOUR, NOW)).toBe(false);
+    expect(isHourlyWindow(NOW - 24 * HOUR, NOW)).toBe(true);
+    expect(lastSeenColumn(false).header).toBe('Last 5 min');
+    expect(lastSeenColumn(true).header).toBe('Last hour');
   });
 });
