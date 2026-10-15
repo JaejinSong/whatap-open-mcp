@@ -50292,6 +50292,7 @@ ${ERRORSNAP_LINE}` : err.mql,
           "",
           `**Window**: ${iso2(stime)} \u2192 ${iso2(etime)} (${timeRange}) | **Errors**: ${Math.round(errTotal).toLocaleString()} | **Error classes**: ${classRows.length}`,
           `**Source**: \`${err.path}\` and \`${httpc.path}\`, the queries behind the WhaTap UI statistics screens.`,
+          last.note,
           ""
         ];
         if (classRows.length === 0 && httpcRows.length === 0) {
@@ -50322,7 +50323,7 @@ ${ERRORSNAP_LINE}` : err.mql,
           if (note) lines.push("", note);
           lines.push(
             "",
-            `A blank service means the error happened outside a traced transaction or its text was not found. ${last.note}`
+            "A blank service means the error happened outside a traced transaction or its text was not found."
           );
           lines.push("");
           if (withStack) {
@@ -50366,7 +50367,6 @@ ${ERRORSNAP_LINE}` : err.mql,
               `| ${cell(s(r, "host") || `hash ${n(r, "hostHash")}`, 60)} | ${n(r, "port") || "-"} | ${cell(s(r, "url") || `hash ${n(r, "urlHash")}`, 100)} | ${Math.round(n(r, "total")).toLocaleString()} | ${Math.round(n(r, "error")).toLocaleString()} | ${Math.round(n(r, "avg"))}ms | ${Math.round(n(r, "max"))}ms | ${cell(s(r, "service") || "-", 60)} | ${iso2(n(r, "tt"))} |`
             );
           }
-          lines.push("", last.note);
           const note = coverageNote(readCoverage(res.httpcCov, "httpc_count"), null);
           if (note) lines.push("", note);
         }
