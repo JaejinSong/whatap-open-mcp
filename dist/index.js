@@ -241,6 +241,7 @@ var McpProtocol = class {
 var McpServer = class {
   _protocol;
   _tools = /* @__PURE__ */ new Map();
+  _wrapper;
   constructor(info) {
     this._protocol = new McpProtocol(info);
   }
@@ -259,7 +260,12 @@ var McpServer = class {
       schema = schemaOrCallback;
       callback = maybeCallback;
     }
-    this._tools.set(name, { name, description, inputSchema: schema, callback });
+    const tool = { name, description, inputSchema: schema, callback };
+    this._tools.set(name, this._wrapper ? this._wrapper(tool) : tool);
+  }
+  /** Apply `wrapper` to every tool registered after this call. */
+  wrapTools(wrapper) {
+    this._wrapper = wrapper;
   }
   /** Connect to a transport and start serving. */
   async connect(transport) {
@@ -404,19 +410,76 @@ var StdioTransport = class {
 };
 
 // src/config.ts
-function loadConfig() {
-  const apiToken = process.env.WHATAP_API_TOKEN;
+var DEFAULT_API_URL = "https://api.whatap.io";
+var SINGLE_SITE = "default";
+var SITE_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
+function trimUrl(url) {
+  return url.trim().replace(/\/+$/, "");
+}
+function siteEnvKey(name, suffix) {
+  return `WHATAP_${name.toUpperCase().replace(/-/g, "_")}_${suffix}`;
+}
+function loadConfig(env = process.env) {
+  const apiToken = env.WHATAP_API_TOKEN;
   if (!apiToken) {
     throw new Error(
       "WHATAP_API_TOKEN environment variable is required. Set it to your WhaTap account API token."
     );
   }
-  const apiUrl = (process.env.WHATAP_API_URL || "https://api.whatap.io").replace(/\/+$/, "");
+  const apiUrl = trimUrl(env.WHATAP_API_URL || DEFAULT_API_URL);
   return { apiToken, apiUrl };
 }
+function loadSites(env = process.env) {
+  const spec = env.WHATAP_SITES?.trim();
+  if (!spec) return [{ name: SINGLE_SITE, ...loadConfig(env) }];
+  const sites = [];
+  const problems = [];
+  for (const entry of spec.split(",").map((s2) => s2.trim()).filter(Boolean)) {
+    const eq = entry.indexOf("=");
+    const name = (eq >= 0 ? entry.slice(0, eq) : entry).trim();
+    const inlineUrl = eq >= 0 ? entry.slice(eq + 1).trim() : "";
+    if (!SITE_NAME_RE.test(name)) {
+      problems.push(`"${name}" is not a valid site name (letters, digits, - and _, starting with a letter)`);
+      continue;
+    }
+    if (sites.some((s2) => s2.name.toLowerCase() === name.toLowerCase())) {
+      problems.push(`site "${name}" is listed twice`);
+      continue;
+    }
+    const tokenKey = siteEnvKey(name, "API_TOKEN");
+    const apiToken = env[tokenKey];
+    if (!apiToken) {
+      problems.push(`${tokenKey} is not set for site "${name}"`);
+      continue;
+    }
+    const apiUrl = trimUrl(inlineUrl || env[siteEnvKey(name, "API_URL")] || DEFAULT_API_URL);
+    sites.push({ name, apiToken, apiUrl });
+  }
+  if (problems.length > 0) {
+    throw new Error(`WHATAP_SITES: ${problems.join("; ")}`);
+  }
+  if (sites.length === 0) {
+    throw new Error("WHATAP_SITES is set but names no site.");
+  }
+  const urls = /* @__PURE__ */ new Set();
+  for (const s2 of sites) {
+    if (urls.has(s2.apiUrl)) {
+      throw new Error(`WHATAP_SITES: two sites point at ${s2.apiUrl}; each site needs its own URL.`);
+    }
+    urls.add(s2.apiUrl);
+  }
+  return sites;
+}
+
+// src/api/sites.ts
+import { AsyncLocalStorage } from "async_hooks";
+
+// src/version.ts
+var VERSION = "1.5.4";
 
 // src/api/client.ts
 var REQUEST_TIMEOUT = 3e4;
+var USER_AGENT = `whatap-mcp/${VERSION}`;
 var MXQL_PAGE_KEY = "mxql";
 function normalizeMxqlParams(param) {
   if (!param) return void 0;
@@ -668,7 +731,7 @@ LIMIT 1`;
     const token = this.projectTokenCache.get(pcode);
     if (!token) {
       throw new Error(
-        `No API token found for project ${pcode}. Ensure your account token has access to this project.`
+        `No API token found for project ${pcode} on ${this.baseUrl}. Ensure your account token has access to this project on this server.`
       );
     }
     return token;
@@ -678,15 +741,16 @@ LIMIT 1`;
     const res = await fetch(url, {
       ...init,
       headers: {
+        "User-Agent": USER_AGENT,
         "x-whatap-token": this.accountToken,
         ...init?.headers
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT)
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
+      const text2 = await res.text().catch(() => "");
       throw new Error(
-        `WhaTap API error (${res.status}): ${text || res.statusText}`
+        `WhaTap API error (${res.status}): ${text2 || res.statusText}`
       );
     }
     return res;
@@ -696,6 +760,7 @@ LIMIT 1`;
     const res = await fetch(url, {
       ...init,
       headers: {
+        "User-Agent": USER_AGENT,
         "x-whatap-token": token,
         "x-whatap-pcode": String(pcode),
         ...init?.headers
@@ -703,12 +768,73 @@ LIMIT 1`;
       signal: AbortSignal.timeout(REQUEST_TIMEOUT)
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
+      const text2 = await res.text().catch(() => "");
       throw new Error(
-        `WhaTap API error (${res.status}) for project ${pcode}: ${text || res.statusText}`
+        `WhaTap API error (${res.status}) for project ${pcode}: ${text2 || res.statusText}`
       );
     }
     return res;
+  }
+};
+
+// src/api/sites.ts
+var SiteRouter = class {
+  sites;
+  clients = /* @__PURE__ */ new Map();
+  current = new AsyncLocalStorage();
+  constructor(sites, makeClient = (s2) => new WhatapApiClient(s2)) {
+    if (sites.length === 0) throw new Error("SiteRouter needs at least one site");
+    this.sites = sites;
+    for (const s2 of sites) this.clients.set(s2.name, makeClient(s2));
+  }
+  get multi() {
+    return this.sites.length > 1;
+  }
+  /**
+   * Find a site by its configured name, its URL or its host, ignoring case
+   * and a trailing slash: `self`, `https://self.whatap.io`, `self.whatap.io`.
+   */
+  resolve(value) {
+    const v = value.trim().replace(/\/+$/, "").toLowerCase();
+    if (!v) return void 0;
+    for (const s2 of this.sites) {
+      const url = s2.apiUrl.toLowerCase();
+      let host = "";
+      try {
+        host = new URL(s2.apiUrl).host.toLowerCase();
+      } catch {
+      }
+      if (v === s2.name.toLowerCase() || v === url || v === host) return s2;
+    }
+    return void 0;
+  }
+  /** `service (https://api.whatap.io), self (https://self.whatap.io)` */
+  describe() {
+    return this.sites.map((s2) => `${s2.name} (${s2.apiUrl})`).join(", ");
+  }
+  clientOf(site) {
+    return this.clients.get(site.name);
+  }
+  /** Run `fn` with every routedClient call going to `site`. */
+  run(site, fn) {
+    return this.current.run(this.clientOf(site), fn);
+  }
+  /** The client for the running tool call; the only site's client otherwise. */
+  active() {
+    const c = this.current.getStore();
+    if (c) return c;
+    if (!this.multi) return this.clientOf(this.sites[0]);
+    throw new Error(`No site selected. Pass site: one of ${this.describe()}.`);
+  }
+  /** A WhatapApiClient stand-in that forwards each access to `active()`. */
+  routedClient() {
+    return new Proxy({}, {
+      get: (_t, prop) => {
+        const c = this.active();
+        const v = c[prop];
+        return typeof v === "function" ? v.bind(c) : v;
+      }
+    });
   }
 };
 
@@ -15808,11 +15934,11 @@ function buildSummaryGuidance(category, fields) {
     guides.push(fm.summary_guide);
   }
   if (guides.length === 0) return null;
-  let text = guides.join(" ");
-  if (text.length > MAX_GUIDANCE_CHARS) {
-    text = text.slice(0, MAX_GUIDANCE_CHARS).replace(/\s\S*$/, "") + "\u2026";
+  let text2 = guides.join(" ");
+  if (text2.length > MAX_GUIDANCE_CHARS) {
+    text2 = text2.slice(0, MAX_GUIDANCE_CHARS).replace(/\s\S*$/, "") + "\u2026";
   }
-  return `**How to analyze**: ${text}`;
+  return `**How to analyze**: ${text2}`;
 }
 
 // src/utils/format.ts
@@ -16451,10 +16577,10 @@ var NEXT_STEPS = {
     "**Next**: `whatap_apm_anomaly(projectCode)` to see which agents the errors line up with."
   ]
 };
-function appendNextSteps(text, toolName) {
+function appendNextSteps(text2, toolName) {
   const steps = NEXT_STEPS[toolName];
-  if (!steps || steps.length === 0) return text;
-  return text + "\n\n---\n" + steps.join("\n");
+  if (!steps || steps.length === 0) return text2;
+  return text2 + "\n\n---\n" + steps.join("\n");
 }
 var CATEGORY_PLATFORMS = {
   app_counter: "APM (JAVA, NODEJS, PYTHON, etc.)",
@@ -16605,9 +16731,6 @@ function buildServerErrorResponse(opts) {
   };
 }
 
-// src/version.ts
-var VERSION = "1.5.4";
-
 // src/tools/project.ts
 function registerProjectTools(server, client) {
   server.tool(
@@ -16617,12 +16740,12 @@ function registerProjectTools(server, client) {
     async () => {
       try {
         const projects = await client.listProjects();
-        const text = formatProjectList(
+        const text2 = formatProjectList(
           projects
         );
         const versioned = `*whatap-mcp v${VERSION}*
 
-${text}`;
+${text2}`;
         return {
           content: [
             { type: "text", text: appendNextSteps(versioned, "whatap_list_projects") }
@@ -16649,10 +16772,10 @@ ${text}`;
           `- **Status**: ${project.status ?? "unknown"}`,
           ...project.gatewayName ? [`- **Gateway**: ${project.gatewayName}`] : []
         ];
-        const text = lines.join("\n");
+        const text2 = lines.join("\n");
         return {
           content: [
-            { type: "text", text: appendNextSteps(text, "whatap_project_info") }
+            { type: "text", text: appendNextSteps(text2, "whatap_project_info") }
           ]
         };
       } catch (err) {
@@ -16670,12 +16793,12 @@ ${text}`;
     async ({ projectCode }) => {
       try {
         const agents = await client.getAgents(projectCode);
-        const text = formatAgentList(
+        const text2 = formatAgentList(
           agents
         );
         return {
           content: [
-            { type: "text", text: appendNextSteps(text, "whatap_list_agents") }
+            { type: "text", text: appendNextSteps(text2, "whatap_list_agents") }
           ]
         };
       } catch (err) {
@@ -17289,11 +17412,11 @@ var MXQL_COMMENT_TRANSLATIONS = {
 };
 
 // src/utils/mxql-comments.ts
-function translateCommentLine(text) {
-  return MXQL_COMMENT_TRANSLATIONS[text.trim()] ?? null;
+function translateCommentLine(text2) {
+  return MXQL_COMMENT_TRANSLATIONS[text2.trim()] ?? null;
 }
-function translateComment(text) {
-  return translateCommentLine(text) ?? text;
+function translateComment(text2) {
+  return translateCommentLine(text2) ?? text2;
 }
 function translateMxqlComments(raw) {
   if (!raw) return raw;
@@ -46979,10 +47102,10 @@ function parseMqlFile(content) {
     loadType
   };
 }
-function parseHeader(text, target) {
+function parseHeader(text2, target) {
   const re = /(\w+)\$\s*:\s*['"]?(\w+)['"]?/g;
   let m;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(text2)) !== null) {
     target[m[1]] = m[2];
   }
 }
@@ -48199,7 +48322,7 @@ Create new queries with \`whatap_create_promql\`.`
               }
             });
           }
-          const text = formatPromqlResponse(result, {
+          const text2 = formatPromqlResponse(result, {
             title: savedQuery || query,
             maxRows: limit,
             maxSeries: 20,
@@ -48209,7 +48332,7 @@ Create new queries with \`whatap_create_promql\`.`
             content: [
               {
                 type: "text",
-                text: appendNextSteps(text, "whatap_query_data")
+                text: appendNextSteps(text2, "whatap_query_data")
               }
             ]
           };
@@ -48350,7 +48473,7 @@ Create new queries with \`whatap_create_promql\`.`
           rawMxql: catalogInfo?.raw
         });
         const baseCategory = catalogInfo?.entry.baseCategories[0];
-        const text = formatMxqlResponse(result, {
+        const text2 = formatMxqlResponse(result, {
           title: path,
           maxRows: limit,
           queryMeta: { stime, etime },
@@ -48361,7 +48484,7 @@ Create new queries with \`whatap_create_promql\`.`
           content: [
             {
               type: "text",
-              text: appendNextSteps(text, "whatap_query_data")
+              text: appendNextSteps(text2, "whatap_query_data")
             }
           ]
         };
@@ -48735,8 +48858,8 @@ ${subQueryNotes.map((n2) => `- ${n2}`).join("\n")}
             `| ${s2.oname} | ${s2.tpsAvg.toFixed(1)} | ${respCol} | ${s2.totalErrors} | ${s2.activeTx8} |`
           );
         }
-        const text = appendNextSteps(lines.join("\n"), "whatap_apm_anomaly");
-        return { content: [{ type: "text", text }] };
+        const text2 = appendNextSteps(lines.join("\n"), "whatap_apm_anomaly");
+        return { content: [{ type: "text", text: text2 }] };
       } catch (err) {
         return classifyAndBuildError(err, {
           toolName: "whatap_apm_anomaly",
@@ -48871,11 +48994,11 @@ Executed (server-expanded path): \`${TOPOLOGY_MQL}\` | window ${stime} \u2192 ${
             rank++;
           }
         }
-        const text = appendNextSteps(
+        const text2 = appendNextSteps(
           lines.join("\n"),
           "whatap_service_topology"
         );
-        return { content: [{ type: "text", text }] };
+        return { content: [{ type: "text", text: text2 }] };
       } catch (err) {
         return classifyAndBuildError(err, {
           toolName: "whatap_service_topology",
@@ -49768,8 +49891,8 @@ function getAllPlatforms() {
 }
 
 // src/tools/install.ts
-function fillTemplate(text, vars) {
-  let result = text;
+function fillTemplate(text2, vars) {
+  let result = text2;
   for (const [key, value] of Object.entries(vars)) {
     result = result.replaceAll(`{${key}}`, value);
   }
@@ -50040,8 +50163,8 @@ function s(row, key) {
   const v = row[key];
   return typeof v === "string" ? v : "";
 }
-function cell(text, max = 120) {
-  const t = text.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+function cell(text2, max = 120) {
+  const t = text2.replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
   return t.length > max ? t.slice(0, max - 1) + "\u2026" : t;
 }
 function iso2(ms) {
@@ -50251,19 +50374,80 @@ function registerAllTools(server, client) {
   registerErrorTools(server, client);
 }
 
+// src/tools/site-arg.ts
+var LIST_TOOL = "whatap_list_projects";
+function text(result) {
+  return result.content.map((c) => "text" in c && typeof c.text === "string" ? c.text : "").join("\n");
+}
+function siteLabel(site) {
+  return `*Site: ${site.name} (${site.apiUrl})*`;
+}
+function labelResult(result, site) {
+  const [first, ...rest] = result.content;
+  if (first && "text" in first && typeof first.text === "string") {
+    return { ...result, content: [{ ...first, text: `${siteLabel(site)}
+
+${first.text}` }, ...rest] };
+  }
+  return { ...result, content: [{ type: "text", text: siteLabel(site) }, ...result.content] };
+}
+function addSiteArgument(server, router) {
+  if (!router.multi) return;
+  const desc = `WhaTap server to query, by name or URL: ${router.describe()}. Servers number projects independently, so a projectCode from one server means a different project on another.`;
+  server.wrapTools((tool) => {
+    const listAll = tool.name === LIST_TOOL;
+    const node = listAll ? z.string().optional().describe(`${desc} Omit to list projects on every server.`) : z.string().describe(desc);
+    const callback = async (args) => {
+      const { site, ...rest } = args;
+      if (site === void 0 && listAll) {
+        const parts = await Promise.all(
+          router.sites.map(async (s3) => {
+            const r = await router.run(s3, () => tool.callback(rest));
+            return { r, s: s3 };
+          })
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: parts.map(({ r, s: s3 }) => `# ${s3.name} (${s3.apiUrl})
+
+${text(r)}`).join("\n\n")
+            }
+          ],
+          ...parts.every(({ r }) => r.isError) ? { isError: true } : {}
+        };
+      }
+      const s2 = router.resolve(String(site ?? ""));
+      if (!s2) {
+        return {
+          content: [{ type: "text", text: `Unknown site "${String(site)}". Use one of: ${router.describe()}.` }],
+          isError: true
+        };
+      }
+      return labelResult(await router.run(s2, () => tool.callback(rest)), s2);
+    };
+    return {
+      ...tool,
+      inputSchema: { ...tool.inputSchema ?? {}, site: node },
+      callback
+    };
+  });
+}
+
 // src/index.ts
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   console.log(`whatap-mcp ${VERSION}`);
   process.exit(0);
 }
 async function main() {
-  const config = loadConfig();
-  const client = new WhatapApiClient(config);
+  const router = new SiteRouter(loadSites());
   const server = new McpServer({
     name: "whatap-mcp",
     version: VERSION
   });
-  registerAllTools(server, client);
+  addSiteArgument(server, router);
+  registerAllTools(server, router.routedClient());
   const transport = new StdioTransport();
   await server.connect(transport);
 }
