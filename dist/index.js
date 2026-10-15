@@ -50093,6 +50093,9 @@ Example with OS: whatap_install_agent(projectCode=38, os="debian")`,
 // src/yard/stat-adaptors.ts
 var GROUP_CAP = 1e4;
 var HOURLY_FROM_MS = 864e5 - 5e3;
+function isHourlyWindow(stime, etime) {
+  return etime - stime >= HOURLY_FROM_MS;
+}
 function template(path) {
   const raw = CATALOG_RAW[path];
   if (!raw) throw new Error(`Stat template not in catalog: ${path}`);
@@ -50100,7 +50103,7 @@ function template(path) {
 }
 var PROJECT_AGENT = "";
 function errorStatQuery(stime, etime, limit) {
-  const path = etime - stime >= HOURLY_FROM_MS ? "mxql/apm/stat/error_stat_1h" : "mxql/apm/stat/error_stat";
+  const path = isHourlyWindow(stime, etime) ? "mxql/apm/stat/error_stat_1h" : "mxql/apm/stat/error_stat";
   const order = "count";
   const mql = fillMarkers(template(path), {
     FILTER: "",
@@ -50113,7 +50116,7 @@ function errorStatQuery(stime, etime, limit) {
   return { path, mql };
 }
 function httpcStatQuery(stime, etime, limit) {
-  const path = etime - stime >= HOURLY_FROM_MS ? "mxql/apm/stat/httpc_stat_1h" : "mxql/apm/stat/httpc_stat";
+  const path = isHourlyWindow(stime, etime) ? "mxql/apm/stat/httpc_stat_1h" : "mxql/apm/stat/httpc_stat";
   const order = "error";
   const mql = fillMarkers(template(path), {
     FILTER: "",
@@ -50140,7 +50143,7 @@ function coverageOf(statMql, field) {
   ].join("\n");
 }
 function errorClassTotalsMql(stime, etime) {
-  const category = etime - stime >= HOURLY_FROM_MS ? "db3_stat_error{h1}" : "db3_stat_error";
+  const category = isHourlyWindow(stime, etime) ? "db3_stat_error{h1}" : "db3_stat_error";
   return [
     `CATEGORY ${category}`,
     "FLEXLOAD",
@@ -50160,6 +50163,9 @@ var MAX_WINDOW_MS2 = 32 * 864e5;
 var STACK_SCAN = 50;
 var CONCURRENCY = 3;
 var ERRORSNAP_LINE = "ERRORSNAP {snap:snapSeq, key:stack, timefield:tt}";
+function lastSeenColumn(hourly) {
+  return hourly ? { header: "Last hour", note: "Last hour is the start of the last hour the row occurred in (windows of a day or more read hourly statistics)." } : { header: "Last 5 min", note: "Last 5 min is the start of the last 5-minute interval the row occurred in (windows under a day read 5-minute statistics)." };
+}
 function n(row, key) {
   const v = row[key];
   const x = typeof v === "number" ? v : typeof v === "string" ? parseFloat(v) : NaN;
@@ -50234,6 +50240,7 @@ Example: whatap_error_summary(projectCode=12345, timeRange="1h")`,
         const withStack = stackLines > 0;
         const err = errorStatQuery(stime, etime, withStack ? Math.max(top, STACK_SCAN) : top);
         const httpc = httpcStatQuery(stime, etime, top);
+        const last = lastSeenColumn(isHourlyWindow(stime, etime));
         const queries = {
           errClass: errorClassTotalsMql(stime, etime),
           errStat: withStack ? `${err.mql}
@@ -50294,7 +50301,7 @@ ${ERRORSNAP_LINE}` : err.mql,
           return { content: [{ type: "text", text: appendNextSteps(lines.join("\n"), tool) }] };
         }
         if (classRows.length > 0) {
-          lines.push("### Errors by class (exact totals)", "", "| Class | Count | Last hour |", "| --- | ---: | --- |");
+          lines.push("### Errors by class (exact totals)", "", `| Class | Count | ${last.header} |`, "| --- | ---: | --- |");
           for (const r of classRows.slice(0, top)) {
             lines.push(`| ${cell(s(r, "class") || `hash ${n(r, "classHash")}`)} | ${Math.round(n(r, "count")).toLocaleString()} | ${iso2(n(r, "tt"))} |`);
           }
@@ -50303,7 +50310,7 @@ ${ERRORSNAP_LINE}` : err.mql,
           lines.push(
             "### Top errors (class + service + message)",
             "",
-            "| # | Class | Message | Service | Count | Last hour |",
+            `| # | Class | Message | Service | Count | ${last.header} |`,
             "| ---: | --- | --- | --- | ---: | --- |"
           );
           detail.forEach((r, i) => {
@@ -50315,7 +50322,7 @@ ${ERRORSNAP_LINE}` : err.mql,
           if (note) lines.push("", note);
           lines.push(
             "",
-            "A blank service means the error happened outside a traced transaction or its text was not found. Last hour is the start of the last hour the row occurred in (the stat tables keep hourly buckets)."
+            `A blank service means the error happened outside a traced transaction or its text was not found. ${last.note}`
           );
           lines.push("");
           if (withStack) {
@@ -50351,7 +50358,7 @@ ${ERRORSNAP_LINE}` : err.mql,
           lines.push("No outbound HTTP call rows in this window.");
         } else {
           lines.push(
-            "| Host | Port | URL | Calls | Errors | Avg | Max | Last caller service | Last hour |",
+            `| Host | Port | URL | Calls | Errors | Avg | Max | Last caller service | ${last.header} |`,
             "| --- | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |"
           );
           for (const r of httpcRows) {
@@ -50359,6 +50366,7 @@ ${ERRORSNAP_LINE}` : err.mql,
               `| ${cell(s(r, "host") || `hash ${n(r, "hostHash")}`, 60)} | ${n(r, "port") || "-"} | ${cell(s(r, "url") || `hash ${n(r, "urlHash")}`, 100)} | ${Math.round(n(r, "total")).toLocaleString()} | ${Math.round(n(r, "error")).toLocaleString()} | ${Math.round(n(r, "avg"))}ms | ${Math.round(n(r, "max"))}ms | ${cell(s(r, "service") || "-", 60)} | ${iso2(n(r, "tt"))} |`
             );
           }
+          lines.push("", last.note);
           const note = coverageNote(readCoverage(res.httpcCov, "httpc_count"), null);
           if (note) lines.push("", note);
         }
