@@ -37,6 +37,7 @@ import {
   httpcStatQuery,
   coverageOf,
   errorClassTotalsMql,
+  isHourlyWindow,
 } from "../yard/stat-adaptors.js";
 
 /** The server rejects windows of 32 days or more. */
@@ -54,6 +55,17 @@ const CONCURRENCY = 3;
 export const ERRORSNAP_LINE = "ERRORSNAP {snap:snapSeq, key:stack, timefield:tt}";
 
 // ─── Helpers ───────────────────────────────────────────────────
+
+/**
+ * Header and footnote for the `tt` column. `tt` is the time of the last stat
+ * record a row occurred in, so its unit follows the window: 5-minute records
+ * under a day, hourly records from a day on.
+ */
+export function lastSeenColumn(hourly: boolean): { header: string; note: string } {
+  return hourly
+    ? { header: "Last hour", note: "Last hour is the start of the last hour the row occurred in (windows of a day or more read hourly statistics)." }
+    : { header: "Last 5 min", note: "Last 5 min is the start of the last 5-minute interval the row occurred in (windows under a day read 5-minute statistics)." };
+}
 
 type Row = Record<string, unknown>;
 
@@ -168,6 +180,7 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
         const withStack = stackLines > 0;
         const err = errorStatQuery(stime, etime, withStack ? Math.max(top, STACK_SCAN) : top);
         const httpc = httpcStatQuery(stime, etime, top);
+        const last = lastSeenColumn(isHourlyWindow(stime, etime));
         const queries = {
           errClass: errorClassTotalsMql(stime, etime),
           errStat: withStack ? `${err.mql}\n${ERRORSNAP_LINE}` : err.mql,
@@ -234,7 +247,7 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
         }
 
         if (classRows.length > 0) {
-          lines.push("### Errors by class (exact totals)", "", "| Class | Count | Last hour |", "| --- | ---: | --- |");
+          lines.push("### Errors by class (exact totals)", "", `| Class | Count | ${last.header} |`, "| --- | ---: | --- |");
           for (const r of classRows.slice(0, top)) {
             lines.push(`| ${cell(s(r, "class") || `hash ${n(r, "classHash")}`)} | ${Math.round(n(r, "count")).toLocaleString()} | ${iso(n(r, "tt"))} |`);
           }
@@ -244,7 +257,7 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
           lines.push(
             "### Top errors (class + service + message)",
             "",
-            "| # | Class | Message | Service | Count | Last hour |",
+            `| # | Class | Message | Service | Count | ${last.header} |`,
             "| ---: | --- | --- | --- | ---: | --- |"
           );
           detail.forEach((r, i) => {
@@ -256,7 +269,7 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
           if (note) lines.push("", note);
           lines.push(
             "",
-            "A blank service means the error happened outside a traced transaction or its text was not found. Last hour is the start of the last hour the row occurred in (the stat tables keep hourly buckets)."
+            `A blank service means the error happened outside a traced transaction or its text was not found. ${last.note}`
           );
           lines.push("");
 
@@ -297,7 +310,7 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
           lines.push("No outbound HTTP call rows in this window.");
         } else {
           lines.push(
-            "| Host | Port | URL | Calls | Errors | Avg | Max | Last caller service | Last hour |",
+            `| Host | Port | URL | Calls | Errors | Avg | Max | Last caller service | ${last.header} |`,
             "| --- | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |"
           );
           for (const r of httpcRows) {
@@ -307,6 +320,7 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
                 `${cell(s(r, "service") || "-", 60)} | ${iso(n(r, "tt"))} |`
             );
           }
+          lines.push("", last.note);
           const note = coverageNote(readCoverage(res.httpcCov, "httpc_count"), null);
           if (note) lines.push("", note);
         }

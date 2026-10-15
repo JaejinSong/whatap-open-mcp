@@ -22,6 +22,15 @@ export const GROUP_CAP = 10_000;
 /** Adaptors switch to the hourly template at this window length. */
 const HOURLY_FROM_MS = 86_400_000 - 5_000;
 
+/**
+ * True when the window reads the hourly categories. Under a day the stat
+ * categories hold 5-minute records, so `tt` (the last record's time) is a
+ * 5-minute boundary; from a day on it is an hour boundary.
+ */
+export function isHourlyWindow(stime: number, etime: number): boolean {
+  return etime - stime >= HOURLY_FROM_MS;
+}
+
 export interface StatQuery {
   /** Catalog path of the template that was filled. */
   path: string;
@@ -43,7 +52,7 @@ const PROJECT_AGENT = "";
  */
 export function errorStatQuery(stime: number, etime: number, limit: number): StatQuery {
   const path =
-    etime - stime >= HOURLY_FROM_MS ? "mxql/apm/stat/error_stat_1h" : "mxql/apm/stat/error_stat";
+    isHourlyWindow(stime, etime) ? "mxql/apm/stat/error_stat_1h" : "mxql/apm/stat/error_stat";
   const order = "count";
   const mql = fillMarkers(template(path), {
     FILTER: "",
@@ -63,7 +72,7 @@ export function errorStatQuery(stime: number, etime: number, limit: number): Sta
  */
 export function httpcStatQuery(stime: number, etime: number, limit: number): StatQuery {
   const path =
-    etime - stime >= HOURLY_FROM_MS ? "mxql/apm/stat/httpc_stat_1h" : "mxql/apm/stat/httpc_stat";
+    isHourlyWindow(stime, etime) ? "mxql/apm/stat/httpc_stat_1h" : "mxql/apm/stat/httpc_stat";
   const order = "error";
   const mql = fillMarkers(template(path), {
     FILTER: "",
@@ -102,7 +111,7 @@ export function coverageOf(statMql: string, field: string): string {
  * so nothing is dropped.
  */
 export function errorClassTotalsMql(stime: number, etime: number): string {
-  const category = etime - stime >= HOURLY_FROM_MS ? "db3_stat_error{h1}" : "db3_stat_error";
+  const category = isHourlyWindow(stime, etime) ? "db3_stat_error{h1}" : "db3_stat_error";
   return [
     `CATEGORY ${category}`,
     "FLEXLOAD",
