@@ -511,6 +511,23 @@ gemini mcp -s user add whatap \
   npx -- -y github:whatap/whatap-open-mcp
 ```
 
+### 여러 WhaTap 서버를 MCP 하나로 쓰기
+
+SaaS 와 온프레미스·공공 서버처럼 WhaTap 서버를 둘 이상 조회하려면 `WHATAP_SITES` 에 `이름=URL` 로 나열하고, 서버마다 토큰을 `WHATAP_<이름>_API_TOKEN` 으로 줍니다. 서버 수에는 제한이 없습니다.
+
+```json
+"env": {
+  "WHATAP_SITES": "service=https://api.whatap.io,onprem=https://whatap.example.com",
+  "WHATAP_SERVICE_API_TOKEN": "SERVICE_토큰",
+  "WHATAP_ONPREM_API_TOKEN": "ONPREM_토큰"
+}
+```
+
+- 이렇게 설정하면 모든 도구가 `site` 인자를 필수로 받습니다. 값은 이름, URL, 호스트 중 무엇이든 됩니다(`onprem`, `https://whatap.example.com`, `whatap.example.com`). 서버마다 프로젝트 코드를 따로 매기므로, MCP 는 프로젝트 코드로 서버를 추측하지 않습니다.
+- `whatap_list_projects` 는 `site` 를 생략하면 모든 서버의 프로젝트를 서버별 절로 보여 줍니다. 모든 응답의 첫 줄에 어느 서버의 결과인지 표시됩니다.
+- `=URL` 없이 이름만 쓰면 `WHATAP_<이름>_API_URL` 을 읽고, 그것도 없으면 `https://api.whatap.io` 를 씁니다. 이름의 `-` 는 변수 이름에서 `_` 가 됩니다(`on-prem` → `WHATAP_ON_PREM_API_TOKEN`).
+- `WHATAP_SITES` 를 설정하면 `WHATAP_API_TOKEN`·`WHATAP_API_URL` 은 쓰지 않습니다. 설정하지 않으면 지금과 같고 도구에 `site` 인자도 없습니다.
+
 ### WhaTap 서비스 리전
 
 프로젝트의 리전은 WhaTap Console에서 프로젝트 생성 시 선택합니다. 리전이 달라도 API URL은 동일합니다.

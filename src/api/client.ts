@@ -1,4 +1,5 @@
 import type { Config } from "../config.js";
+import { VERSION } from "../version.js";
 import type {
   Project,
   ProjectInfo,
@@ -10,6 +11,13 @@ import type {
 } from "./types.js";
 
 const REQUEST_TIMEOUT = 30_000;
+
+/**
+ * Sent on every request so WhaTap (and the CDN in front of some servers) can
+ * tell MCP traffic apart. Node's default is just "node"; self.whatap.io's
+ * Cloudflare rejects some library defaults (Python-urllib → 403, error 1010).
+ */
+export const USER_AGENT = `whatap-mcp/${VERSION}`;
 
 /** Required in every MXQL request body. Echoed back on empty results. */
 export const MXQL_PAGE_KEY = "mxql";
@@ -353,8 +361,8 @@ export class WhatapApiClient {
     const token = this.projectTokenCache.get(pcode);
     if (!token) {
       throw new Error(
-        `No API token found for project ${pcode}. ` +
-          `Ensure your account token has access to this project.`
+        `No API token found for project ${pcode} on ${this.baseUrl}. ` +
+          `Ensure your account token has access to this project on this server.`
       );
     }
     return token;
@@ -368,6 +376,7 @@ export class WhatapApiClient {
     const res = await fetch(url, {
       ...init,
       headers: {
+        "User-Agent": USER_AGENT,
         "x-whatap-token": this.accountToken,
         ...init?.headers,
       },
@@ -393,6 +402,7 @@ export class WhatapApiClient {
     const res = await fetch(url, {
       ...init,
       headers: {
+        "User-Agent": USER_AGENT,
         "x-whatap-token": token,
         "x-whatap-pcode": String(pcode),
         ...init?.headers,

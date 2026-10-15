@@ -457,6 +457,23 @@ gemini mcp -s user add whatap \
   npx -- -y github:whatap/whatap-open-mcp
 ```
 
+### Several WhaTap Servers in One MCP
+
+To query more than one WhaTap server (for example SaaS and an on-premises or government server) from one MCP, list them in `WHATAP_SITES` as `name=url` and give each its own token in `WHATAP_<NAME>_API_TOKEN`. Any number of servers works.
+
+```json
+"env": {
+  "WHATAP_SITES": "service=https://api.whatap.io,onprem=https://whatap.example.com",
+  "WHATAP_SERVICE_API_TOKEN": "TOKEN_FOR_SERVICE",
+  "WHATAP_ONPREM_API_TOKEN": "TOKEN_FOR_ONPREM"
+}
+```
+
+- Every tool then takes a required `site`: the name, the URL or the host (`onprem`, `https://whatap.example.com`, `whatap.example.com`). Servers number projects independently, so the MCP never guesses the server from a project code.
+- `whatap_list_projects` without `site` lists every server, one section each. Every answer starts with the server it came from.
+- A name without `=url` reads `WHATAP_<NAME>_API_URL`, then falls back to `https://api.whatap.io`. Hyphens in a name become `_` in variable names (`on-prem` → `WHATAP_ON_PREM_API_TOKEN`).
+- With `WHATAP_SITES` set, `WHATAP_API_TOKEN` and `WHATAP_API_URL` are ignored. Without it, nothing changes and tools take no `site`.
+
 ### WhaTap Service Regions
 
 Your projects may be hosted in any of these regions. The region is selected when you create a project in the WhaTap console — it does **not** affect the API URL.
