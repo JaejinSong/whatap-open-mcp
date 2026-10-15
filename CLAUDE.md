@@ -18,7 +18,7 @@ npx @modelcontextprotocol/inspector node dist/index.js   # Test with MCP Inspect
 src/
 ├── index.ts              # Entry: McpServer + StdioTransport + --version flag
 ├── version.ts            # Single source of truth for VERSION constant
-├── config.ts             # Loads WHATAP_API_TOKEN, WHATAP_API_URL from env
+├── config.ts             # Loads WHATAP_API_TOKEN/URL, or WHATAP_SITES (several servers)
 ├── mcp/
 │   ├── types.ts          # JSON-RPC + MCP protocol interfaces
 │   ├── schema.ts         # Zod-compatible schema builder (z.string, z.number, etc.)
@@ -27,6 +27,7 @@ src/
 │   └── server.ts         # McpServer class with tool() API
 ├── api/
 │   ├── client.ts         # WhatapApiClient — HTTP, two-tier auth, token cache, category probing
+│   ├── sites.ts          # SiteRouter — one client per WHATAP_SITES server; routedClient follows the call's site
 │   ├── limits.ts         # Measured server limits (window < 32d, limit ≤ 100,000) and checkLimit()
 │   └── types.ts          # TypeScript interfaces (Project, Agent, MxqlTextParams, MxqlPathParams)
 ├── data/
@@ -49,6 +50,7 @@ src/
 │   ├── yard.ts (3)       # data_availability, describe_query, query_data (+PromQL/savedQuery)
 │   ├── mesh.ts (2)       # apm_anomaly (4-query parallel), service_topology (NPM)
 │   ├── errors.ts (1)     # error_summary (stat_error/stat_httpc + HVTEXT/ERRORSNAP, group-cap check)
+│   ├── site-arg.ts       # Adds required `site` (name/URL/host) to every tool when several servers are set
 │   ├── install.ts (1)    # install_agent (fetch access + generate install commands for 29 platforms)
 │   └── promql.ts (1)     # create_promql (validate + save reusable PromQL queries)
 └── utils/

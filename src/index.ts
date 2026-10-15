@@ -1,8 +1,9 @@
 import { McpServer } from "./mcp/server.js";
 import { StdioTransport } from "./mcp/transport.js";
-import { loadConfig } from "./config.js";
-import { WhatapApiClient } from "./api/client.js";
+import { loadSites } from "./config.js";
+import { SiteRouter } from "./api/sites.js";
 import { registerAllTools } from "./tools/index.js";
+import { addSiteArgument } from "./tools/site-arg.js";
 import { VERSION } from "./version.js";
 
 export { VERSION };
@@ -13,15 +14,15 @@ if (process.argv.includes("--version") || process.argv.includes("-v")) {
 }
 
 async function main() {
-  const config = loadConfig();
-  const client = new WhatapApiClient(config);
+  const router = new SiteRouter(loadSites());
 
   const server = new McpServer({
     name: "whatap-mcp",
     version: VERSION,
   });
 
-  registerAllTools(server, client);
+  addSiteArgument(server, router);
+  registerAllTools(server, router.routedClient());
 
   const transport = new StdioTransport();
   await server.connect(transport);

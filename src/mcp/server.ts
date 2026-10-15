@@ -11,7 +11,7 @@ import type { StdioTransport } from "./transport.js";
 
 // ── Types ────────────────────────────────────────────────────────
 
-interface RegisteredTool {
+export interface RegisteredTool {
   name: string;
   description: string;
   inputSchema: SchemaShape | undefined;
@@ -21,11 +21,15 @@ interface RegisteredTool {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ToolCallback = (args: any) => Promise<McpToolResult>;
 
+/** Rewrites a tool as it is registered, e.g. to add an argument every tool takes. */
+export type ToolWrapper = (tool: RegisteredTool) => RegisteredTool;
+
 // ── McpServer ────────────────────────────────────────────────────
 
 export class McpServer {
   private readonly _protocol: McpProtocol;
   private readonly _tools = new Map<string, RegisteredTool>();
+  private _wrapper: ToolWrapper | undefined;
 
   constructor(info: { name: string; version: string }) {
     this._protocol = new McpProtocol(info);
@@ -55,7 +59,13 @@ export class McpServer {
       callback = maybeCallback!;
     }
 
-    this._tools.set(name, { name, description, inputSchema: schema, callback });
+    const tool: RegisteredTool = { name, description, inputSchema: schema, callback };
+    this._tools.set(name, this._wrapper ? this._wrapper(tool) : tool);
+  }
+
+  /** Apply `wrapper` to every tool registered after this call. */
+  wrapTools(wrapper: ToolWrapper): void {
+    this._wrapper = wrapper;
   }
 
   /** Connect to a transport and start serving. */

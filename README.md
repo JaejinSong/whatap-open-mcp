@@ -181,6 +181,8 @@ Your AI assistant picks the right tools automatically. You just ask questions in
 
 Override `WHATAP_API_URL` only for government or on-premises installations.
 
+To use several WhaTap servers from one MCP, set `WHATAP_SITES=name=url,...` with `WHATAP_<NAME>_API_TOKEN` per server; every tool then takes a `site` (name or URL). See the user manual, "Several WhaTap Servers in One MCP".
+
 ## Troubleshooting
 
 **"WHATAP_API_TOKEN environment variable is required"**
