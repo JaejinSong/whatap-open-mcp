@@ -30,6 +30,7 @@ function setup(result: unknown[] = ROW) {
     executeMxqlPath: rec('path'),
     executePromql: rec('promql'),
     resolveOids: async () => new Map(),
+    apiUrl: 'http://test',
   } as unknown as WhatapApiClient;
   registerYardTools(server, client);
   registerMeshTools(server, client);
@@ -164,7 +165,7 @@ describe('whatap_query_data window per execution mode', () => {
   });
 
   it('saved PromQL query', async () => {
-    getPromqlQueryStore().save({
+    getPromqlQueryStore().save('http://test', {
       name: 'saved-x', description: '', query: 'up', projectCode: 1,
       metricType: '', createdAt: '', lastUsed: '',
     });

@@ -32,28 +32,32 @@ export interface SavedPromqlQuery {
 }
 
 /**
- * In-memory query store with optional file persistence.
- * Queries persist across tool calls within the same MCP server session.
- * Saved to disk for cross-session reuse when a save path is available.
+ * In-memory query store. Queries persist across tool calls within the same
+ * MCP server session.
+ *
+ * Keyed by server URL as well as projectCode: one MCP can serve several WhaTap
+ * servers (WHATAP_SITES), and each numbers its projects independently, so
+ * pcode 1 on one server is a different project from pcode 1 on another.
  */
 class PromqlQueryStore {
   private queries = new Map<string, SavedPromqlQuery>();
 
   /** Save a validated query. */
-  save(query: SavedPromqlQuery): void {
-    this.queries.set(this.key(query.projectCode, query.name), query);
+  save(server: string, query: SavedPromqlQuery): void {
+    this.queries.set(this.key(server, query.projectCode, query.name), query);
   }
 
   /** Get a saved query by project + name. */
-  get(projectCode: number, name: string): SavedPromqlQuery | undefined {
-    return this.queries.get(this.key(projectCode, name));
+  get(server: string, projectCode: number, name: string): SavedPromqlQuery | undefined {
+    return this.queries.get(this.key(server, projectCode, name));
   }
 
   /** List all saved queries for a project. */
-  listForProject(projectCode: number): SavedPromqlQuery[] {
+  listForProject(server: string, projectCode: number): SavedPromqlQuery[] {
+    const prefix = this.key(server, projectCode, "");
     const result: SavedPromqlQuery[] = [];
-    for (const q of this.queries.values()) {
-      if (q.projectCode === projectCode) result.push(q);
+    for (const [k, q] of this.queries) {
+      if (k.startsWith(prefix)) result.push(q);
     }
     return result;
   }
@@ -64,12 +68,12 @@ class PromqlQueryStore {
   }
 
   /** Delete a saved query. */
-  delete(projectCode: number, name: string): boolean {
-    return this.queries.delete(this.key(projectCode, name));
+  delete(server: string, projectCode: number, name: string): boolean {
+    return this.queries.delete(this.key(server, projectCode, name));
   }
 
-  private key(projectCode: number, name: string): string {
-    return `${projectCode}:${name}`;
+  private key(server: string, projectCode: number, name: string): string {
+    return `${server}\n${projectCode}:${name}`;
   }
 }
 
@@ -207,7 +211,7 @@ export function registerPromqlTools(
           createdAt: new Date().toISOString(),
           lastUsed: new Date().toISOString(),
         };
-        queryStore.save(savedQuery);
+        queryStore.save(client.apiUrl, savedQuery);
 
         // Format preview
         const preview = formatPromqlResponse(result, {

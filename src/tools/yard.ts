@@ -432,7 +432,7 @@ export function registerYardTools(
           }
 
           // ── Saved PromQL queries ──
-          const savedQueries = getPromqlQueryStore().listForProject(projectCode);
+          const savedQueries = getPromqlQueryStore().listForProject(client.apiUrl, projectCode);
           if (savedQueries.length > 0) {
             lines.push(`### Saved PromQL Queries (${savedQueries.length})`, "");
             for (const sq of savedQueries) {
@@ -1066,9 +1066,9 @@ export function registerYardTools(
 
       // ── Resolve saved query ──
       if (savedQuery) {
-        const saved = getPromqlQueryStore().get(projectCode, savedQuery);
+        const saved = getPromqlQueryStore().get(client.apiUrl, projectCode, savedQuery);
         if (!saved) {
-          const available = getPromqlQueryStore().listForProject(projectCode);
+          const available = getPromqlQueryStore().listForProject(client.apiUrl, projectCode);
           const list = available.map((q) => `"${q.name}"`).join(", ") || "(none)";
           return {
             content: [

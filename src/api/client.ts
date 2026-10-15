@@ -65,6 +65,11 @@ export class WhatapApiClient {
     this.accountToken = config.apiToken;
   }
 
+  /** Server this client talks to. Projects are only unique within one server. */
+  get apiUrl(): string {
+    return this.baseUrl;
+  }
+
   // --- Account-level operations ---
 
   async listProjects(): Promise<Project[]> {
