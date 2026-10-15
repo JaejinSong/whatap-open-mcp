@@ -504,6 +504,10 @@ var WhatapApiClient = class {
     this.baseUrl = config.apiUrl;
     this.accountToken = config.apiToken;
   }
+  /** Server this client talks to. Projects are only unique within one server. */
+  get apiUrl() {
+    return this.baseUrl;
+  }
   // --- Account-level operations ---
   async listProjects() {
     const res = await this.fetchAccount("/open-mcp/api/json/projects");
@@ -47302,18 +47306,19 @@ function getCatalogSize() {
 var PromqlQueryStore = class {
   queries = /* @__PURE__ */ new Map();
   /** Save a validated query. */
-  save(query) {
-    this.queries.set(this.key(query.projectCode, query.name), query);
+  save(server, query) {
+    this.queries.set(this.key(server, query.projectCode, query.name), query);
   }
   /** Get a saved query by project + name. */
-  get(projectCode, name) {
-    return this.queries.get(this.key(projectCode, name));
+  get(server, projectCode, name) {
+    return this.queries.get(this.key(server, projectCode, name));
   }
   /** List all saved queries for a project. */
-  listForProject(projectCode) {
+  listForProject(server, projectCode) {
+    const prefix = this.key(server, projectCode, "");
     const result = [];
-    for (const q of this.queries.values()) {
-      if (q.projectCode === projectCode) result.push(q);
+    for (const [k, q] of this.queries) {
+      if (k.startsWith(prefix)) result.push(q);
     }
     return result;
   }
@@ -47322,11 +47327,12 @@ var PromqlQueryStore = class {
     return Array.from(this.queries.values());
   }
   /** Delete a saved query. */
-  delete(projectCode, name) {
-    return this.queries.delete(this.key(projectCode, name));
+  delete(server, projectCode, name) {
+    return this.queries.delete(this.key(server, projectCode, name));
   }
-  key(projectCode, name) {
-    return `${projectCode}:${name}`;
+  key(server, projectCode, name) {
+    return `${server}
+${projectCode}:${name}`;
   }
 };
 var queryStore = new PromqlQueryStore();
@@ -47422,7 +47428,7 @@ The query syntax may be valid but no metrics matched in the time range.
           createdAt: (/* @__PURE__ */ new Date()).toISOString(),
           lastUsed: (/* @__PURE__ */ new Date()).toISOString()
         };
-        queryStore.save(savedQuery);
+        queryStore.save(client.apiUrl, savedQuery);
         const preview = formatPromqlResponse(result, {
           title: name,
           maxRows: 50,
@@ -47784,7 +47790,7 @@ function registerYardTools(server, client) {
             }
           } catch {
           }
-          const savedQueries = getPromqlQueryStore().listForProject(projectCode);
+          const savedQueries = getPromqlQueryStore().listForProject(client.apiUrl, projectCode);
           if (savedQueries.length > 0) {
             lines2.push(`### Saved PromQL Queries (${savedQueries.length})`, "");
             for (const sq of savedQueries) {
@@ -48251,9 +48257,9 @@ Verify the metric exists: \`whatap_data_availability(projectCode=${projectCode})
         });
       }
       if (savedQuery) {
-        const saved = getPromqlQueryStore().get(projectCode, savedQuery);
+        const saved = getPromqlQueryStore().get(client.apiUrl, projectCode, savedQuery);
         if (!saved) {
-          const available = getPromqlQueryStore().listForProject(projectCode);
+          const available = getPromqlQueryStore().listForProject(client.apiUrl, projectCode);
           const list = available.map((q) => `"${q.name}"`).join(", ") || "(none)";
           return {
             content: [
