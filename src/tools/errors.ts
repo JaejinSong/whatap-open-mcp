@@ -233,6 +233,7 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
           "",
           `**Window**: ${iso(stime)} → ${iso(etime)} (${timeRange}) | **Errors**: ${Math.round(errTotal).toLocaleString()} | **Error classes**: ${classRows.length}`,
           `**Source**: \`${err.path}\` and \`${httpc.path}\`, the queries behind the WhaTap UI statistics screens.`,
+          last.note,
           "",
         ];
 
@@ -269,7 +270,7 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
           if (note) lines.push("", note);
           lines.push(
             "",
-            `A blank service means the error happened outside a traced transaction or its text was not found. ${last.note}`
+            "A blank service means the error happened outside a traced transaction or its text was not found."
           );
           lines.push("");
 
@@ -320,7 +321,6 @@ export function registerErrorTools(server: McpServer, client: WhatapApiClient): 
                 `${cell(s(r, "service") || "-", 60)} | ${iso(n(r, "tt"))} |`
             );
           }
-          lines.push("", last.note);
           const note = coverageNote(readCoverage(res.httpcCov, "httpc_count"), null);
           if (note) lines.push("", note);
         }
